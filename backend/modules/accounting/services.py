@@ -81,6 +81,14 @@ def create_journal_entry(db: Session, data: schemas.JournalEntryCreate,
     lines_ = []
     for line in data.lines:
         acct = db.get(models.Account, line.account_id)
+        # حماية من تلوث البيانات: لو مُرِّرت "شجرة الحسابات" بدل المعرف الداخلي
+        # (مثل 4100 أو 5100 حيث id الفعلي صغير)، نحاول حلها إلى المعرف الصحيح.
+        if not acct:
+            by_code = db.scalar(select(models.Account).where(
+                models.Account.code == str(line.account_id)))
+            if by_code:
+                acct = by_code
+                line.account_id = by_code.id
         if not acct:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 f"الحساب رقم {line.account_id} غير موجود في دليل الحسابات")
@@ -88,7 +96,7 @@ def create_journal_entry(db: Session, data: schemas.JournalEntryCreate,
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 f"الحساب {acct.code} موقوف — لا يُرحَّل عليه قيود")
         lines_.append(models.JournalLine(
-            account_id=line.account_id, debit=line.debit, credit=line.credit))
+            account_id=acct.id, debit=line.debit, credit=line.credit))
 
     entry = models.JournalEntry(
         entry_no=entry_no,
