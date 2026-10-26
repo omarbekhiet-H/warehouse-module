@@ -38,10 +38,12 @@
     <span class="ver">الإصدار {{ version }} — لوحة القيادة الرئيسية</span>
   </div>
   <div class="quick-links">
+    <span id="whoami" class="ver"></span>
     <a href="/docs" target="_blank">📚 الوثائق التفاعلية API</a>
     <a href="#modules">🧩 الموديولات</a>
     <a href="#screens">🖥️ الشاشات التفصيلية</a>
     <a href="#links">🔗 دليل الروابط</a>
+    <a href="#" onclick="logout();return false;">🚪 خروج</a>
   </div>
 </div>
 
@@ -148,5 +150,25 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// جلسة المستخدم: التوكن من شاشة /login (sessionStorage) — اللوحة تعرض البيانات العامة فقط،
+// والشاشات المحمية تتطلب إرفاق الترويسة Authorization (عبر /docs أو الواجهات القادمة).
+(function(){
+  const tok = sessionStorage.getItem('erp_token');
+  const u = JSON.parse(sessionStorage.getItem('erp_user') || 'null');
+  const el = document.getElementById('whoami');
+  if(u && tok){
+    el.textContent = '👤 ' + (u.full_name || u.username);
+  } else {
+    el.innerHTML = '<a href="/login" style="color:#ffd54f;text-decoration:none;font-weight:700">🔑 سجّل الدخول</a>';
+  }
+})();
+function logout(){
+  sessionStorage.removeItem('erp_token');
+  sessionStorage.removeItem('erp_refresh');
+  sessionStorage.removeItem('erp_user');
+  location.href = '/login';
+}
+</script>
 </body>
 </html>

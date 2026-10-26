@@ -162,6 +162,21 @@ def _safe(fn):
         return None
 
 
+@app.get("/login", response_class=HTMLResponse, tags=["النظام"], summary="شاشة تسجيل الدخول")
+def login_page(request: Request):
+    """بوابة الدخول الرسمية — تُغلق الجلسة وتعرض نموذج Bootstrap بنفس هوية النظام.
+    التوكن يُخزَّن في sessionStorage بالمتصفح وتستخدمه بقية الشاشات في ترويسة Authorization."""
+    from pathlib import Path
+
+    from fastapi.templating import Jinja2Templates
+    tpl = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+    resp = tpl.TemplateResponse("login.html", {
+        "request": request, "app_name": settings.APP_NAME, "version": "1.0.0",
+    })
+    resp.delete_cookie("erp_session")
+    return resp
+
+
 @app.get("/", response_class=HTMLResponse, tags=["النظام"], summary="الشاشة الرئيسة (لوحة القيادة)")
 def dashboard(request: Request):
     """الوضع النهائي للشاشة الرئيسة: بطاقة لكل موديول بنفس تنسيق التقارير
@@ -457,7 +472,7 @@ def dashboard(request: Request):
             "description": "تسجيل الدخول JWT، إدارة المستخدمين والأدوار (RBAC)، وسجل تدقيق الدخول.",
             "groups": [
                 {"title": "الجلسات", "screens": [
-                    _scr("🚪 تسجيل الدخول (POST)", f"{P}/auth/login"),
+                    _scr("🚪 شاشة تسجيل الدخول (HTML)", "/login"),
                     _scr("🔁 تحديث الرمز (POST)", f"{P}/auth/refresh"),
                     _scr("🚪 تسجيل الخروج (POST)", f"{P}/auth/logout"),
                     _scr("🙋 بيانات المستخدم الحالي", f"{P}/auth/me"),
