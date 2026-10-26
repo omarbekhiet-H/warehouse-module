@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>الحضور والانصراف — الموارد البشرية</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    body { background: #f1f5f9; font-family: 'Cairo','Segoe UI', Tahoma, sans-serif; padding: 15px; font-size: 13px; }
+    .report-card { max-width: 1100px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .tb-table th { background: #e2e8f0; text-align: center; vertical-align: middle; padding: 8px; font-size: 12px; border: 1px solid #cbd5e1; }
+    .tb-table td { padding: 6px 10px; font-size: 12px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    .num { font-family: monospace; text-align: left; direction: ltr; }
+    .form-header { background:#1e5b93; color:#fff; padding:10px 15px; border-radius:8px 8px 0 0; margin:-20px -20px 15px; }
+    #frmBox { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; }
+</style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="report-card">
+        <div class="form-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-calendar-check"></i> الحضور والانصراف</h5>
+            <div class="d-flex gap-2"><a href="/" class="btn btn-sm btn-light"><i class="bi bi-house"></i> الرئيسية</a><span id="whoami"></span></div>
+        </div>
+        <div id="toastBox" style="display:none"></div>
+
+        <div id="frmBox">
+            <h6 class="text-primary mb-3"><i class="bi bi-plus-circle"></i> تسجيل حضور / انصراف</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3"><label class="form-label">الموظف *</label><select id="f-emp" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label">التاريخ *</label><input type="date" id="f-date" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">الحالة</label>
+                    <select id="f-status" class="form-select form-select-sm">
+                        <option value="present">حضور</option><option value="absent">غياب</option>
+                        <option value="leave">إجازة</option><option value="holiday">عطلة رسمية</option>
+                    </select></div>
+                <div class="col-md-2"><label class="form-label">دخول</label><input type="time" id="f-in" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">خروج</label><input type="time" id="f-out" class="form-control form-control-sm"></div>
+                <div class="col-md-1"><label class="form-label">إضافي (س)</label><input type="number" step="0.5" min="0" max="24" id="f-ot" class="form-control form-control-sm" value="0"></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" onclick="saveAtt()"><i class="bi bi-save"></i> تسجيل</button></div>
+            </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="form-label">الشهر</label><input type="month" id="period" class="form-control form-control-sm"></div>
+            <div class="col-md-3"><label class="form-label">موظف (فلتر)</label><select id="filter-emp" class="form-select form-select-sm"><option value="">الكل</option></select></div>
+            <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" onclick="loadAtt()"><i class="bi bi-search"></i> عرض السجل</button></div>
+            <div class="col-md-2"><button class="btn btn-outline-info btn-sm w-100" onclick="loadSummary()"><i class="bi bi-bar-chart"></i> ملخص الشهر</button></div>
+        </div>
+
+        <div id="content"><div class="text-center p-5">جاري التحميل...</div></div>
+    </div>
+</div>
+<script src="/templates/ui_base.js"></script>
+<script>
+let EMPS = [];
+const ST_AR = {present:'حضور', absent:'غياب', leave:'إجازة', holiday:'عطلة'};
+
+async function loadEmployees() {
+    EMPS = (await ERP.get('/hr/employees')).filter(e => e.is_active);
+    const opts = '<option value="">— اختر موظفًا —</option>' +
+        EMPS.map(e => `<option value="${e.id}">${ERP.esc(e.code)} - ${ERP.esc(e.name_ar)}</option>`).join('');
+    document.getElementById('f-emp').innerHTML = opts;
+    document.getElementById('filter-emp').innerHTML = '<option value="">الكل</option>' +
+        EMPS.map(e => `<option value="${e.id}">${ERP.esc(e.code)} - ${ERP.esc(e.name_ar)}</option>`).join('');
+}
+
+async function saveAtt() {
+    const emp = document.getElementById('f-emp').value;
+    if (!emp) return ERP.toast('اختر الموظف أولاً', false);
+    const body = {
+        employee_id: +emp, work_date: document.getElementById('f-date').value,
+        status: document.getElementById('f-status').value,
+        check_in: document.getElementById('f-in').value || null,
+        check_out: document.getElementById('f-out').value || null,
+        overtime_hours: +document.getElementById('f-ot').value || 0
+    };
+    try { await ERP.post('/hr/attendance', body); ERP.toast('تم تسجيل اليوم بنجاح'); loadAtt(); }
+    catch (e) { ERP.toast(e.message, false); }
+}
+
+async function loadAtt() {
+    ERP.loading();
+    const period = document.getElementById('period').value;
+    const emp = document.getElementById('filter-emp').value;
+    try {
+        const rows = await ERP.get(`/hr/attendance?period=${period}` + (emp ? `&employee_id=${emp}` : ''));
+        let h = `<table class="table tb-table table-bordered align-middle"><thead><tr>
+            <th>التاريخ</th><th>الموظف</th><th>الحالة</th><th>دخول</th><th>خروج</th><th>ساعات إضافية</th></tr></thead><tbody>`;
+        if (!rows.length) h += '<tr><td colspan="6" class="text-center text-muted p-4">لا توجد سجلات في هذا الشهر.</td></tr>';
+        rows.forEach(r => {
+            h += `<tr><td class="text-center">${r.work_date}</td><td>${ERP.esc(r.employee_name || r.employee_id)}</td>
+                  <td class="text-center"><span class="badge ${r.status==='present'?'bg-success':r.status==='absent'?'bg-danger':'bg-secondary'}">${ST_AR[r.status]||r.status}</span></td>
+                  <td class="text-center">${r.check_in || '—'}</td><td class="text-center">${r.check_out || '—'}</td>
+                  <td class="num">${r.overtime_hours || 0}</td></tr>`;
+        });
+        h += '</tbody></table>';
+        document.getElementById('content').innerHTML = h;
+    } catch (e) { document.getElementById('content').innerHTML = `<div class="alert alert-danger">${ERP.esc(e.message)}</div>`; }
+}
+
+async function loadSummary() {
+    const emp = document.getElementById('filter-emp').value || (EMPS[0] && EMPS[0].id);
+    if (!emp) return ERP.toast('أضف موظفًا أولاً لعرض الملخص', false);
+    try {
+        const s = await ERP.get(`/hr/attendance/summary?employee_id=${emp}&period=${document.getElementById('period').value}`);
+        document.getElementById('content').innerHTML = `
+            <div class="alert alert-info"><strong>ملخص الشهر:</strong> أيام العمل ${s.work_days || 0}،
+            الغياب ${s.absent_days || 0} يوم (خصم ${ERP.money(s.absence_deduction)})،
+            الإضافي ${s.overtime_hours || 0} ساعة (قيمة ${ERP.money(s.overtime_amount)})</div>`;
+    } catch (e) { ERP.toast(e.message, false); }
+}
+
+window.onload = async () => {
+    document.getElementById('f-date').value = ERP.today();
+    document.getElementById('period').value = ERP.month();
+    try { await loadEmployees(); } catch (e) {}
+    loadAtt();
+};
+</script>
+</body>
+</html>

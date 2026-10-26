@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>شاشة الموظفين — الموارد البشرية</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    body { background: #f1f5f9; font-family: 'Cairo','Segoe UI', Tahoma, sans-serif; padding: 15px; font-size: 13px; }
+    .report-card { max-width: 1200px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .tb-table th { background: #e2e8f0; text-align: center; vertical-align: middle; padding: 8px; font-size: 12px; border: 1px solid #cbd5e1; }
+    .tb-table td { padding: 6px 10px; font-size: 12px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    .tb-table tbody tr:hover { background-color: #f8fafc; }
+    .num { font-family: monospace; font-weight: bold; text-align: left; direction: ltr; }
+    .form-header { background:#1e5b93; color:#fff; padding:10px 15px; border-radius:8px 8px 0 0; margin:-20px -20px 15px; }
+    #frmBox { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; }
+</style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="report-card">
+        <div class="form-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-people"></i> إدارة الموظفين (الملف الوظيفي)</h5>
+            <div class="d-flex gap-2">
+                <a href="/" class="btn btn-sm btn-light"><i class="bi bi-house"></i> الرئيسية</a>
+                <span id="whoami"></span>
+            </div>
+        </div>
+        <div id="toastBox" style="display:none"></div>
+
+        <!-- نموذج الإضافة / التعديل -->
+        <div id="frmBox">
+            <h6 class="text-primary mb-3" id="frmTitle"><i class="bi bi-plus-circle"></i> تعيين موظف جديد</h6>
+            <input type="hidden" id="editId">
+            <div class="row g-2">
+                <div class="col-md-2"><label class="form-label">الكود *</label><input id="f-code" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="form-label">الاسم *</label><input id="f-name" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">الرقم القومي</label><input id="f-nid" class="form-control form-control-sm" maxlength="14"></div>
+                <div class="col-md-2"><label class="form-label">المسمى الوظيفي</label><input id="f-job" class="form-control form-control-sm"></div>
+                <div class="col-md-1"><label class="form-label">تليفون</label><input id="f-phone" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">تاريخ التعيين</label><input type="date" id="f-hire" class="form-control form-control-sm"></div>
+
+                <div class="col-md-3"><label class="form-label">القسم</label><select id="f-dept" class="form-select form-select-sm"></select></div>
+                <div class="col-md-3"><label class="form-label">الفرع</label><select id="f-branch" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label">الأساسي</label><input type="number" step="0.01" min="0" id="f-base" class="form-control form-control-sm" value="0"></div>
+                <div class="col-md-2"><label class="form-label">البدلات</label><input type="number" step="0.01" min="0" id="f-allw" class="form-control form-control-sm" value="0"></div>
+                <div class="col-md-1"><label class="form-label">تأمينات %</label><input type="number" step="0.1" min="0" max="100" id="f-ins" class="form-control form-control-sm" value="10"></div>
+                <div class="col-md-1"><label class="form-label">ضريبة %</label><input type="number" step="0.1" min="0" max="100" id="f-tax" class="form-control form-control-sm" value="0"></div>
+
+                <div class="col-md-3"><label class="form-label">طريقة الصرف</label>
+                    <select id="f-pay" class="form-select form-select-sm">
+                        <option value="cash">نقدي</option><option value="bank_transfer">تحويل بنكي</option><option value="check">شيك</option>
+                    </select></div>
+                <div class="col-md-3"><label class="form-label">رقم الحساب البنكي</label><input id="f-bankno" class="form-control form-control-sm"></div>
+                <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary btn-sm w-100" onclick="saveEmployee()"><i class="bi bi-save"></i> حفظ</button></div>
+                <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-secondary btn-sm w-100" onclick="resetForm()">جديد</button></div>
+            </div>
+        </div>
+
+        <!-- الفلتر والجدول -->
+        <div class="row g-2 mb-3">
+            <div class="col-md-3"><input id="search" class="form-control form-control-sm" placeholder="بحث بالاسم أو الكود..."></div>
+            <div class="col-md-2"><select id="f-status" class="form-select form-select-sm" onchange="loadEmployees()">
+                <option value="">النشطون فقط</option><option value="all">كل الحالات</option><option value="inactive">الموقوفون</option>
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" onclick="loadEmployees()"><i class="bi bi-search"></i> عرض</button></div>
+        </div>
+
+        <div id="content"><div class="text-center p-5">جاري التحميل...</div></div>
+    </div>
+</div>
+<script src="/templates/ui_base.js"></script>
+<script>
+let DEPTS = [], BRANCHES = [];
+
+async function loadLookups() {
+    DEPTS = await ERP.get('/hr/departments');
+    BRANCHES = await ERP.get('/hr/branches');
+    document.getElementById('f-dept').innerHTML = '<option value="">— بدون —</option>' +
+        DEPTS.map(d => `<option value="${d.id}">${ERP.esc(d.name_ar)}</option>`).join('');
+    document.getElementById('f-branch').innerHTML = '<option value="">— بدون —</option>' +
+        BRANCHES.map(b => `<option value="${b.id}">${ERP.esc(b.name_ar)}</option>`).join('');
+}
+
+async function loadEmployees() {
+    ERP.loading();
+    const st = document.getElementById('f-status').value;
+    let path = '/hr/employees';
+    const q = document.getElementById('search').value.trim();
+    if (q) path += '?search=' + encodeURIComponent(q);
+    try {
+        let rows = await ERP.get(path);
+        if (st === 'inactive') rows = rows.filter(r => !r.is_active);
+        else if (st === '') rows = rows.filter(r => r.is_active);
+        render(rows);
+    } catch (e) {
+        document.getElementById('content').innerHTML =
+            `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${ERP.esc(e.message)} — تأكد من تسجيل الدخول من <a href="/login">/login</a></div>`;
+    }
+}
+
+function render(rows) {
+    if (!rows.length) { document.getElementById('content').innerHTML = '<div class="alert alert-info">لا يوجد موظبون مسجلون — أضف قسمًا أولاً ثم موظفًا من النموذج أعلاه.</div>'; return; }
+    let h = `<table class="table tb-table table-bordered align-middle"><thead><tr>
+        <th>كود</th><th>الاسم</th><th>القسم</th><th>الفرع</th><th>المسمى</th>
+        <th>الأساسي</th><th>البدلات</th><th>الإجمالي</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>`;
+    rows.forEach(r => {
+        h += `<tr>
+            <td class="text-center">${ERP.esc(r.code)}</td>
+            <td>${ERP.esc(r.name_ar)}</td>
+            <td>${ERP.esc(r.department_name || '—')}</td>
+            <td>${ERP.esc(r.branch_name || '—')}</td>
+            <td>${ERP.esc(r.job_title || '—')}</td>
+            <td class="num">${ERP.money(r.base_salary)}</td>
+            <td class="num">${ERP.money(r.allowances)}</td>
+            <td class="num fw-bold">${ERP.money(Number(r.base_salary) + Number(r.allowances))}</td>
+            <td class="text-center">${r.is_active ? '<span class="badge bg-success">نشط</span>' : '<span class="badge bg-secondary">موقوف</span>'}</td>
+            <td class="text-center"><button class="btn btn-sm btn-outline-primary" onclick="editEmp(${r.id})"><i class="bi bi-pencil"></i> تعديل</button></td>
+        </tr>`;
+    });
+    h += '</tbody></table>';
+    document.getElementById('content').innerHTML = h;
+}
+
+function editEmp(id) {
+    ERP.get('/hr/employees/' + id).then(r => {
+        document.getElementById('editId').value = r.id;
+        document.getElementById('frmTitle').innerHTML = '<i class="bi bi-pencil"></i> تعديل بيانات الموظف #' + r.id;
+        const set = (k, v) => { document.getElementById(k).value = (v === null || v === undefined) ? '' : v; };
+        set('f-code', r.code); document.getElementById('f-code').disabled = true;
+        set('f-name', r.name_ar); set('f-nid', r.national_id); set('f-job', r.job_title);
+        set('f-phone', r.phone); set('f-hire', r.hire_date);
+        set('f-dept', r.department_id || ''); set('f-branch', r.branch_id || '');
+        set('f-base', r.base_salary); set('f-allw', r.allowances);
+        set('f-ins', (r.insurance_rate || 0) * 100); set('f-tax', (r.tax_rate || 0) * 100);
+        set('f-pay', r.payment_method); set('f-bankno', r.bank_account_no);
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    }).catch(e => ERP.toast(e.message, false));
+}
+
+function resetForm() {
+    document.getElementById('editId').value = '';
+    document.getElementById('f-code').disabled = false;
+    ['f-code','f-name','f-nid','f-job','f-phone','f-hire','f-bankno'].forEach(k => document.getElementById(k).value = '');
+    ['f-dept','f-branch','f-pay'].forEach(k => document.getElementById(k).selectedIndex = 0);
+    ['f-base','f-allw'].forEach(k => document.getElementById(k).value = 0);
+    document.getElementById('f-ins').value = 10; document.getElementById('f-tax').value = 0;
+    document.getElementById('frmTitle').innerHTML = '<i class="bi bi-plus-circle"></i> تعيين موظف جديد';
+}
+
+async function saveEmployee() {
+    const g = k => document.getElementById(k).value;
+    const body = {
+        code: g('f-code').trim(), name_ar: g('f-name').trim(),
+        national_id: g('f-nid') || null, job_title: g('f-job') || null, phone: g('f-phone') || null,
+        hire_date: g('f-hire') || null, department_id: g('f-dept') ? +g('f-dept') : null,
+        branch_id: g('f-branch') ? +g('f-branch') : null,
+        base_salary: +g('f-base') || 0, allowances: +g('f-allw') || 0,
+        insurance_rate: (+g('f-ins') || 0) / 100, tax_rate: (+g('f-tax') || 0) / 100,
+        payment_method: g('f-pay'), bank_account_no: g('f-bankno') || null
+    };
+    try {
+        const id = document.getElementById('editId').value;
+        if (id) {
+            await ERP.put('/hr/employees/' + id, body);
+            ERP.toast('تم تحديث بيانات الموظف بنجاح');
+        } else {
+            await ERP.post('/hr/employees', body);
+            ERP.toast('تم تعيين الموظف بنجاح');
+            resetForm();
+        }
+        loadEmployees();
+    } catch (e) { ERP.toast(e.message, false); }
+}
+
+document.getElementById('search').addEventListener('keyup', e => { if (e.key === 'Enter') loadEmployees(); });
+window.onload = async () => { try { await loadLookups(); } catch (e) {} await loadEmployees(); };
+</script>
+</body>
+</html>

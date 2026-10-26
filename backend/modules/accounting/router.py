@@ -72,10 +72,7 @@ def list_entries(source_ref: str | None = Query(None, description="ربط الق
 def trial_balance(date_from: dt.date | None = None, date_to: dt.date | None = None,
                   db: Session = Depends(get_db)):
     rows = services.trial_balance(db, date_from, date_to)
-    totals = {
-        "total_debit": round(sum(r["debit"] for r in rows), 4),
-        "total_credit": round(sum(r["credit"] for r in rows), 4),
-    }
+    totals = services.trial_balance_totals(rows)
     return ApiResponse.ok({"rows": rows, "totals": totals})
 
 

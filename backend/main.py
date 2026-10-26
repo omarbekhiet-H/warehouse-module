@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import datetime as dt
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
@@ -179,6 +180,55 @@ def login_page(request: Request):
     return resp
 
 
+# ==================== شاشات الإدخال التفاعلية (HR وغيرها) ====================
+# الملفات في backend/templates/pages وتُقدَّم من نفس المسارات القديمة التي يعرفها المستخدم
+# (مثل /hr_employees.html) حتى لا تنكسر الروابط، مع دعم امتداد .html أو بدونه.
+_PAGES_DIR = Path(__file__).parent / "templates" / "pages"
+
+_PAGE_TITLES = {
+    "hr_departments": ("الأقسام والفروع — الموارد البشرية", "الموارد البشرية"),
+    "hr_employees":   ("إدارة الموظفين — الموارد البشرية", "الموارد البشرية"),
+    "hr_attendance":  ("الحضور والانصراف — الموارد البشرية", "الموارد البشرية"),
+    "hr_loans":       ("السلف والقروض — الموارد البشرية", "الموارد البشرية"),
+    "hr_payroll":     ("مسير الرواتب — الموارد البشرية", "الموارد البشرية"),
+}
+
+
+def _page_response(page: str):
+    """تقديم ملف HTML من مجلد pages بأمان (قائمة بيضاء — لا مسار عشوائي من المستخدم)."""
+    from fastapi.responses import FileResponse
+    if page not in _PAGE_TITLES:
+        raise HTTPException(status_code=404, detail="الشاشة غير موجودة")
+    fp = _PAGES_DIR / f"{page}.html"
+    if not fp.exists():
+        raise HTTPException(status_code=404, detail=f"ملف الشاشة مفقود: {page}.html")
+    return FileResponse(str(fp), media_type="text/html; charset=utf-8")
+
+
+for _pg in list(_PAGE_TITLES):
+    app.add_api_route(f"/{_pg}.html", lambda _p=_pg: _page_response(_p),
+                      methods=["GET"], include_in_schema=False)
+    app.add_api_route(f"/{_pg}", lambda _p=_pg: _page_response(_p),
+                      methods=["GET"], include_in_schema=False)
+
+
+@app.get("/api/v1/ui/screens", tags=["النظام"], summary="فهرس شاشات الإدخال المتاحة")
+def ui_screens_index():
+    return ApiResponse.ok([
+        {"name": t[0], "module": t[1], "url": f"/{k}.html"} for k, t in _PAGE_TITLES.items()
+    ])
+
+
+# ملف JS المشترك للشاشات (ERP helper) — يُقدَّم مباشرة لضمان توفره بكل المسارات
+@app.get("/templates/ui_base.js", include_in_schema=False)
+def ui_base_js():
+    from fastapi.responses import FileResponse
+    fp = Path(__file__).parent / "templates" / "ui_base.js"
+    if not fp.exists():
+        raise HTTPException(status_code=404, detail="ui_base.js مفقود")
+    return FileResponse(str(fp), media_type="application/javascript; charset=utf-8")
+
+
 @app.get("/", response_class=HTMLResponse, tags=["النظام"], summary="الشاشة الرئيسة (لوحة القيادة)")
 def dashboard(request: Request):
     """الوضع النهائي للشاشة الرئيسة: بطاقة لكل موديول بنفس تنسيق التقارير
@@ -337,10 +387,11 @@ def dashboard(request: Request):
                 {"label": "سلف/قروض جارية", "value": active_loans},
             ],
             "links": [
-                {"text": "🗂️ ملف الموظفين (JSON)", "url": f"{P}/hr/employees"},
-                {"text": "✅ سجل الحضور الشهري (JSON)", "url": f"{P}/hr/attendance?period={cur_period}"},
-                {"text": "💸 السلف والقروض وأقساطها (JSON)", "url": f"{P}/hr/loans"},
-                {"text": "🧮 مسيرات الرواتب (JSON)", "url": f"{P}/hr/payrolls"},
+                {"text": "🏢 الأقسام والفروع (شاشة إدخال)", "url": "/hr_departments.html"},
+                {"text": "🗂️ شاشة الموظفين (تعيين/تعديل)", "url": "/hr_employees.html"},
+                {"text": "📅 شاشة الحضور والانصراف", "url": "/hr_attendance.html"},
+                {"text": "💸 شاشة السلف والقروض", "url": "/hr_loans.html"},
+                {"text": "🧮 شاشة مسير الرواتب", "url": "/hr_payroll.html"},
                 {"text": "🖨️ كشف المرتبات للطباعة", "url": f"{P}/hr/reports/payroll-sheet/print?period={cur_period}"},
             ],
         })
@@ -451,20 +502,22 @@ def dashboard(request: Request):
             "name": "الموارد البشرية والرواتب", "icon": "👥", "color": "#c62828",
             "description": "ملفات العاملين، الحضور والانصراف، السلف والقروض بأقساطها، ومسير الرواتب مع الترحيل المحاسبي الآلي.",
             "groups": [
-                {"title": "البيانات الرئيسية", "screens": [
-                    _scr("🏢 الأقسام", f"{P}/hr/departments"),
-                    _scr("🌐 الفروع", f"{P}/hr/branches"),
-                    _scr("🗂️ ملف الموظفين (التعيين/تعديل)", f"{P}/hr/employees"),
+                {"title": "الشاشات التفاعلية (إدخال مباشر)", "screens": [
+                    _scr("🏢 الأقسام والفروع — شاشة إدخال", "/hr_departments.html"),
+                    _scr("🗂️ الموظفون — شاشة تعيين/تعديل", "/hr_employees.html"),
+                    _scr("📅 الحضور والانصراف — شاشة تسجيل", "/hr_attendance.html"),
+                    _scr("💸 السلف والقروض — شاشة دورة الصرف", "/hr_loans.html"),
+                    _scr("🧮 مسير الرواتب — توليد/اعتماد/صرف", "/hr_payroll.html"),
                 ]},
-                {"title": "الحضور والانصراف", "screens": [
+                {"title": "بيانات JSON (للمطورين/Try-it-out)", "screens": [
+                    _scr("🏢 قائمة الأقسام", f"{P}/hr/departments"),
+                    _scr("🌐 قائمة الفروع", f"{P}/hr/branches"),
+                    _scr("🗂️ ملف الموظفين", f"{P}/hr/employees"),
                     _scr("✅ سجل الحضور الشهري", f"{P}/hr/attendance?period={cur_period}"),
-                    _scr("📅 ملخص الشهر (غياب/إضافي)", f"{P}/hr/attendance/summary?employee_id=1&period={cur_period}"),
+                    _scr("💸 السلف وأقساطها", f"{P}/hr/loans"),
+                    _scr("🧮 مسيرات الرواتب", f"{P}/hr/payrolls"),
                 ]},
-                {"title": "السلف والقروض", "screens": [
-                    _scr("💸 السلف والقروض وأقساطها", f"{P}/hr/loans"),
-                ]},
-                {"title": "مسير الرواتب", "screens": [
-                    _scr("🧮 مسيرات الرواتب (إنشاء/اعتماد/صرف)", f"{P}/hr/payrolls"),
+                {"title": "الطباعة", "screens": [
                     _scr("🖨️ كشف المرتبات للطباعة", f"{P}/hr/reports/payroll-sheet/print?period={cur_period}"),
                 ]},
             ],

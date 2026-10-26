@@ -54,6 +54,14 @@ templates.env.filters["money"] = _fmt
 templates.env.filters["pct"] = _fmt_pct = _pct
 
 
+@router.get("/trial-balance", response_class=HTMLResponse, summary="شاشة ميزان المراجعة التفصيلي")
+def trial_balance_screen(request: Request):
+    """شاشة تفاعلية (Bootstrap) لميزان المراجعة: افتتاحي + حركة الفترة + ختامي،
+    مع فلاتر (نوع القائمة/المستوى/إخفاء الأصفار) وشريط توازن.
+    البيانات من نفس مصدر قائمة الدخل والميزانية — مطابقة حتمية."""
+    return templates.TemplateResponse(request, "reports/trial_balance.html", {"request": request})
+
+
 @router.get("/income-statement", response_class=HTMLResponse, summary="طباعة قائمة الدخل المقارنة")
 def print_income_statement(
     request: Request,

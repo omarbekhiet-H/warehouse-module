@@ -1,3 +1,5 @@
-__pycache__/
+*.db
 *.pyc
+.venv/
+__pycache__/
 erp.db

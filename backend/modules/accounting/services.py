@@ -625,29 +625,67 @@ def balance_sheet(db: Session, as_of: dt.date | None = None) -> dict:
 
 def trial_balance(db: Session, date_from: dt.date | None = None,
                   date_to: dt.date | None = None):
-    stmt = (
-        select(
-            models.Account.id,
-            models.Account.code,
-            models.Account.name_ar,
-            func.coalesce(func.sum(models.JournalLine.debit), 0).label("debit"),
-            func.coalesce(func.sum(models.JournalLine.credit), 0).label("credit"),
+    """ميزان مراجعة تفصيلي: رصيد أول الفترة + حركة الفترة + رصيد آخر الفترة لكل حساب.
+
+    الأرصدة تُعرض بالطبيعة (مدين/دائن) حسب نوع الحساب، والإجماليات مبنية على
+    أرصدة صافية متعاوضة بحيث يتساوى مجموع الأعمدة المدينة مع الدائنة دائمًا
+    طالما القيود متوازنة — وهو ما يضمن تطابق ميزان المراجعة مع قائمة الدخل
+    والميزانية (نفس مصدر البيانات `_period_activity`).
+    """
+    from sqlalchemy import and_
+
+    p_from = date_from or dt.date(year=1970, month=1, day=1)
+    p_to = date_to or dt.date(year=2999, month=12, day=31)
+
+    accounts = db.query(models.Account).order_by(models.Account.code).all()
+    acc_ids = {a.id: a for a in accounts}
+
+    def _sums(cond) -> dict[int, tuple[float, float]]:
+        stmt = (
+            select(models.JournalLine.account_id,
+                   func.coalesce(func.sum(models.JournalLine.debit), 0),
+                   func.coalesce(func.sum(models.JournalLine.credit), 0))
+            .join(models.JournalEntry, models.JournalEntry.id == models.JournalLine.entry_id)
+            .where(cond)
+            .group_by(models.JournalLine.account_id)
         )
-        .join(models.JournalLine, models.JournalLine.account_id == models.Account.id, isouter=True)
-        .join(models.JournalEntry, models.JournalEntry.id == models.JournalLine.entry_id, isouter=True)
-        .group_by(models.Account.id)
-        .order_by(models.Account.code)
-    )
-    if date_from:
-        stmt = stmt.where(func.date(models.JournalEntry.date) >= dt.datetime.combine(date_from, dt.time()))
-    if date_to:
-        stmt = stmt.where(func.date(models.JournalEntry.date) <= dt.datetime.combine(date_to, dt.time()))
-    rows = db.execute(stmt).all()
-    return [
-        {
-            "account_id": r.id, "code": r.code, "name_ar": r.name_ar,
-            "debit": float(r.debit), "credit": float(r.credit),
-            "balance": float(r.debit) - float(r.credit),
-        }
-        for r in rows
-    ]
+        return {r[0]: (float(r[1]), float(r[2])) for r in db.execute(stmt).all()}
+
+    opening = _sums(models.JournalEntry.date < dt.datetime.combine(p_from, dt.time()))
+    period = _sums(and_(models.JournalEntry.date >= dt.datetime.combine(p_from, dt.time()),
+                        models.JournalEntry.date <= dt.datetime.combine(p_to, dt.time())))
+
+    debit_nature = {"asset", "expense"}
+    rows = []
+    for a in accounts:
+        od, oc = opening.get(a.id, (0.0, 0.0))
+        pd_, pc = period.get(a.id, (0.0, 0.0))
+        obal = od - oc          # صافي الافتتاحي (مدين موجب)
+        pnet = pd_ - pc         # صافي حركة الفترة
+        cbal = obal + pnet      # صافي الختامي
+        if a.account_type in debit_nature:
+            o_d, o_c = (obal, 0.0) if obal >= 0 else (0.0, -obal)
+            c_d, c_c = (cbal, 0.0) if cbal >= 0 else (0.0, -cbal)
+        else:  # liability / equity / revenue — طبيعة دائنة
+            o_d, o_c = (-obal, 0.0) if obal < 0 else (0.0, obal)
+            c_d, c_c = (-cbal, 0.0) if cbal < 0 else (0.0, cbal)
+        rows.append({
+            "account_id": a.id, "code": a.code, "name_ar": a.name_ar,
+            "account_type": a.account_type,
+            "opening_debit": round(o_d, 4), "opening_credit": round(o_c, 4),
+            "debit": round(pd_, 4), "credit": round(pc, 4),          # حركة الفترة (إجماليات)
+            "period_net": round(pnet, 4),
+            "closing_debit": round(c_d, 4), "closing_credit": round(c_c, 4),
+            "balance": round(cbal, 4),
+            # توافق مع الواجهات القديمة
+            "closing_balance": round(cbal, 4),
+        })
+    return rows
+
+
+def trial_balance_totals(rows: list[dict]) -> dict:
+    """إجماليات ميزان المراجعة من الأرصدة الصافية المتعاوضة (تتوازن حتمًا مع توازن القيود)."""
+    tot = {k: round(sum(r[k] for r in rows), 4) for k in
+           ("opening_debit", "opening_credit", "debit", "credit", "closing_debit", "closing_credit")}
+    tot["balanced"] = abs(tot["closing_debit"] - tot["closing_credit"]) < 0.01
+    return tot

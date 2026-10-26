@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>السلف والقروض — الموارد البشرية</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    body { background: #f1f5f9; font-family: 'Cairo','Segoe UI', Tahoma, sans-serif; padding: 15px; font-size: 13px; }
+    .report-card { max-width: 1200px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .tb-table th { background: #e2e8f0; text-align: center; vertical-align: middle; padding: 8px; font-size: 12px; border: 1px solid #cbd5e1; }
+    .tb-table td { padding: 6px 10px; font-size: 12px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    .num { font-family: monospace; font-weight: bold; text-align: left; direction: ltr; }
+    .form-header { background:#1e5b93; color:#fff; padding:10px 15px; border-radius:8px 8px 0 0; margin:-20px -20px 15px; }
+    #frmBox { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; }
+</style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="report-card">
+        <div class="form-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-cash-stack"></i> السلف والقروض ودورة الصرف</h5>
+            <div class="d-flex gap-2"><a href="/" class="btn btn-sm btn-light"><i class="bi bi-house"></i> الرئيسية</a><span id="whoami"></span></div>
+        </div>
+        <div id="toastBox" style="display:none"></div>
+
+        <div id="frmBox">
+            <h6 class="text-primary mb-3"><i class="bi bi-plus-circle"></i> طلب سلفة / قرض جديد</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3"><label class="form-label">الموظف *</label><select id="f-emp" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label">النوع</label>
+                    <select id="f-kind" class="form-select form-select-sm"><option value="advance">سلفة</option><option value="loan">قرض</option></select></div>
+                <div class="col-md-2"><label class="form-label">قيمة الأصل *</label><input type="number" step="0.01" min="0.01" id="f-principal" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">عدد الأقساط</label><input type="number" min="1" max="60" id="f-inst" class="form-control form-control-sm" value="1"></div>
+                <div class="col-md-2"><label class="form-label">بداية الاستقطاع</label><input type="month" id="f-start" class="form-control form-control-sm"></div>
+                <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="createLoan()"><i class="bi bi-save"></i></button></div>
+            </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-md-3"><label class="form-label">الحالة</label>
+                <select id="filter-status" class="form-select form-select-sm" onchange="loadLoans()">
+                    <option value="">الكل</option><option value="pending">بانتظار الاعتماد</option>
+                    <option value="approved">معتمد (لم يُصرف)</option><option value="active">جاري السداد</option><option value="settled">مسدد</option>
+                </select></div>
+            <div class="col-md-3"><label class="form-label">الموظف</label><select id="filter-emp" class="form-select form-select-sm"><option value="">الكل</option></select></div>
+            <div class="col-md-2"><button class="btn btn-primary btn-sm w-100" onclick="loadLoans()"><i class="bi bi-search"></i> عرض</button></div>
+        </div>
+
+        <div id="content"><div class="text-center p-5">جاري التحميل...</div></div>
+    </div>
+</div>
+
+<!-- مودال صرف السلفة -->
+<div class="modal fade" id="disbModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2" style="background:#1e5b93;color:#fff"><h6 class="modal-title">صرف السلفة #<span id="d-loan"></span></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label">طريقة الصرف</label>
+          <select id="d-method" class="form-select form-select-sm"><option value="cash">نقدي من صندوق</option><option value="bank_transfer">تحويل بنكي</option><option value="check">شيك صادر</option></select></div>
+        <div class="mb-2"><label class="form-label">حساب الصندوق/البنك *</label><select id="d-account" class="form-select form-select-sm"></select></div>
+        <div class="mb-2"><label class="form-label">تاريخ الصرف</label><input type="date" id="d-date" class="form-control form-control-sm"></div>
+      </div>
+      <div class="modal-footer py-2"><button class="btn btn-primary btn-sm" onclick="doDisburse()">اعتماد الصرف وترحيل القيد</button></div>
+    </div>
+  </div>
+</div>
+
+<script src="/templates/ui_base.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let EMPS = [], DISB_ID = null;
+const ST_AR = {pending:'بانتظار الاعتماد', approved:'معتمد', active:'جاري السداد', settled:'مسدد', cancelled:'ملغي'};
+const ST_BADGE = {pending:'bg-warning text-dark', approved:'bg-info', active:'bg-primary', settled:'bg-success', cancelled:'bg-secondary'};
+
+async function loadEmployees() {
+    EMPS = (await ERP.get('/hr/employees')).filter(e => e.is_active);
+    const o = EMPS.map(e => `<option value="${e.id}">${ERP.esc(e.code)} - ${ERP.esc(e.name_ar)}</option>`).join('');
+    document.getElementById('f-emp').innerHTML = '<option value="">— اختر —</option>' + o;
+    document.getElementById('filter-emp').innerHTML = '<option value="">الكل</option>' + o;
+}
+
+async function createLoan() {
+    const emp = document.getElementById('f-emp').value;
+    const pr = +document.getElementById('f-principal').value;
+    if (!emp || !pr) return ERP.toast('اختر الموظف وأدخل قيمة السلفة', false);
+    try {
+        await ERP.post('/hr/loans', {
+            employee_id: +emp, kind: document.getElementById('f-kind').value, principal: pr,
+            installments_count: +document.getElementById('f-inst').value || 1,
+            start_period: document.getElementById('f-start').value
+        });
+        ERP.toast('تم إنشاء الطلب — يحتاج اعتمادًا ثم صرفًا');
+        loadLoans();
+    } catch (e) { ERP.toast(e.message, false); }
+}
+
+async function loadLoans() {
+    ERP.loading();
+    const st = document.getElementById('filter-status').value;
+    const emp = document.getElementById('filter-emp').value;
+    let q = [];
+    if (st) q.push('status=' + st);
+    if (emp) q.push('employee_id=' + emp);
+    try {
+        const rows = await ERP.get('/hr/loans' + (q.length ? '?' + q.join('&') : ''));
+        let h = `<table class="table tb-table table-bordered align-middle"><thead><tr>
+            <th>رقم السلفة</th><th>الموظف</th><th>النوع</th><th>الأصل</th><th>القسط</th><th>عدد الأقساط</th>
+            <th>المسدد</th><th>المتبقي</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>`;
+        if (!rows.length) h += '<tr><td colspan="10" class="text-center text-muted p-4">لا توجد سلف.</td></tr>';
+        rows.forEach(r => {
+            let acts = '';
+            if (r.status === 'pending') acts += `<button class="btn btn-sm btn-outline-success" onclick="act(${r.id},'approve')">اعتماد</button>
+                 <button class="btn btn-sm btn-outline-danger" onclick="cancelLoan(${r.id})">رفض</button>`;
+            if (r.status === 'approved') acts += `<button class="btn btn-sm btn-primary" onclick="openDisburse(${r.id})">صرف</button>`;
+            if (r.status === 'active') acts += `<button class="btn btn-sm btn-outline-info" onclick="toggleSched(${r.id})">جدول الأقساط</button>
+                 <button class="btn btn-sm btn-outline-success" onclick="act(${r.id},'settle')">سداد معجل</button>`;
+            h += `<tr><td class="text-center">${ERP.esc(r.loan_no)}</td><td>${ERP.esc(r.employee_name || r.employee_id)}</td>
+                  <td class="text-center">${r.kind === 'loan' ? 'قرض' : 'سلفة'}</td>
+                  <td class="num">${ERP.money(r.principal)}</td><td class="num">${ERP.money(r.installment_amount)}</td>
+                  <td class="text-center">${r.installments_count}</td><td class="num">${ERP.money(r.repaid_amount)}</td>
+                  <td class="num">${ERP.money(r.remaining)}</td>
+                  <td class="text-center"><span class="badge ${ST_BADGE[r.status] || 'bg-secondary'}">${ST_AR[r.status] || r.status}</span></td>
+                  <td class="text-center">${acts}</td></tr>
+                  <tr id="sched-${r.id}" style="display:none"><td colspan="10" class="p-2 bg-light"><div id="sched-body-${r.id}"></div></td></tr>`;
+        });
+        h += '</tbody></table>';
+        document.getElementById('content').innerHTML = h;
+    } catch (e) { document.getElementById('content').innerHTML = `<div class="alert alert-danger">${ERP.esc(e.message)}</div>`; }
+}
+
+async function act(id, action) {
+    try { await ERP.post(`/hr/loans/${id}/${action}`, {}); ERP.toast('تم تنفيذ الإجراء'); loadLoans(); }
+    catch (e) { ERP.toast(e.message, false); }
+}
+
+async function cancelLoan(id) {
+    const reason = prompt('سبب الرفض/الإلغاء:');
+    if (!reason || reason.trim().length < 3) return ERP.toast('اكتب سببًا لا يقل عن 3 أحرف', false);
+    try { await ERP.post(`/hr/loans/${id}/cancel?reason=${encodeURIComponent(reason)}`, {}); ERP.toast('تم إلغاء السلفة'); loadLoans(); }
+    catch (e) { ERP.toast(e.message, false); }
+}
+
+async function toggleSched(id) {
+    const row = document.getElementById('sched-' + id);
+    if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+    row.style.display = '';
+    try {
+        const loans = await ERP.get('/hr/loans?status=active&status=all'.replace('&status=all',''));
+        const loan = loans.find(l => l.id === id);
+        let h = '<table class="table table-sm mb-0"><thead><tr><th>#</th><th>الشهر</th><th>القسط</th><th>الحالة</th></tr></thead><tbody>';
+        ((loan && loan.schedule) || []).forEach(s => {
+            h += `<tr><td>${s.seq}</td><td>${s.period}</td><td class="num">${ERP.money(s.amount)}</td>
+                  <td>${s.status === 'paid' ? '<span class="badge bg-success">مستقطع</span>' : '<span class="badge bg-secondary">معلق</span>'}</td></tr>`;
+        });
+        h += '</tbody></table>';
+        document.getElementById('sched-body-' + id).innerHTML = h;
+    } catch (e) { document.getElementById('sched-body-' + id).innerHTML = `<span class="text-danger">${ERP.esc(e.message)}</span>`; }
+}
+
+async function openDisburse(id) {
+    DISB_ID = id;
+    document.getElementById('d-loan').textContent = id;
+    document.getElementById('d-date').value = ERP.today();
+    try {
+        const accs = (await ERP.get('/treasury/accounts')).filter(a => a.is_active);
+        const want = document.getElementById('d-method').value;
+        document.getElementById('d-account').innerHTML = accs
+            .filter(a => want === 'cash' ? a.account_kind === 'cash' : a.account_kind === 'bank')
+            .map(a => `<option value="${a.id}">${ERP.esc(a.name_ar)} (${a.account_kind === 'cash' ? 'صندوق' : 'بنك'})</option>`).join('')
+            || '<option value="">لا توجد حسابات — أضفها من شاشة الخزينة</option>';
+    } catch (e) { document.getElementById('d-account').innerHTML = '<option value="">تعذر تحميل الحسابات</option>'; }
+    new bootstrap.Modal(document.getElementById('disbModal')).show();
+}
+
+async function doDisburse() {
+    const acc = document.getElementById('d-account').value;
+    if (!acc) return ERP.toast('اختر حساب الصندوق/البنك', false);
+    try {
+        await ERP.post(`/hr/loans/${DISB_ID}/disburse`, {
+            pay_method: document.getElementById('d-method').value,
+            account_id: +acc, date: document.getElementById('d-date').value || null
+        });
+        bootstrap.Modal.getInstance(document.getElementById('disbModal')).hide();
+        ERP.toast('تم صرف السلفة وترحيل قيدها المحاسبي');
+        loadLoans();
+    } catch (e) { ERP.toast(e.message, false); }
+}
+
+window.onload = async () => {
+    document.getElementById('f-start').value = ERP.month();
+    try { await loadEmployees(); } catch (e) {}
+    loadLoans();
+};
+</script>
+</body>
+</html>

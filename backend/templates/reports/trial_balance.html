@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>ميزان المراجعة</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    body { background: #f1f5f9; font-family: 'Cairo','Segoe UI', Tahoma, sans-serif; padding: 15px; font-size: 13px; }
+    .report-card { max-width: 1100px; margin: 0 auto; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .tb-table th { background: #e2e8f0; text-align: center; vertical-align: middle; padding: 8px; font-size: 12px; border: 1px solid #cbd5e1; }
+    .tb-table td { padding: 6px 10px; font-size: 12px; border: 1px solid #e2e8f0; vertical-align: middle; }
+    .tb-table tbody tr:hover { background-color: #f8fafc; }
+    .num { font-family: monospace; font-weight: bold; text-align: left; direction: ltr; }
+    .total-row { background-color: #dbeafe !important; font-weight: 900; color: #1e3c72; }
+    .text-danger-custom { color: #dc2626; }
+    .text-success-custom { color: #059669; }
+</style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="report-card">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-list-check text-primary"></i> ميزان المراجعة</h4>
+            <a href="/" class="btn btn-sm btn-outline-secondary"><i class="bi bi-house"></i> الرئيسية</a>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-2">
+                <label>من تاريخ</label>
+                <input type="date" id="fromDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label>إلى تاريخ</label>
+                <input type="date" id="toDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label>نوع القائمة</label>
+                <select id="f-type" class="form-select form-select-sm" onchange="loadReport()">
+                    <option value="all">الكل</option>
+                    <option value="income">قائمة الدخل</option>
+                    <option value="balance">الميزانية</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label>مستوى العرض</label>
+                <select id="f-level" class="form-select form-select-sm" onchange="loadReport()">
+                    <option value="1">أرقام قصيرة (1-2 خانات)</option>
+                    <option value="2">المستوى الثاني</option>
+                    <option value="3" selected>المستوى الثالث</option>
+                    <option value="99">كل المستويات</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check form-switch mb-1" style="padding-right: 25px;">
+                    <input class="form-check-input" type="checkbox" id="f-hide-zero" checked onchange="loadReport()" style="cursor: pointer;">
+                    <label class="form-check-label text-muted" for="f-hide-zero" style="cursor: pointer; white-space: nowrap; font-size: 12px;">إخفاء الأصفار</label>
+                </div>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-primary btn-sm w-100" onclick="loadReport()"><i class="bi bi-search"></i> عرض</button>
+            </div>
+        </div>
+
+        <div id="report-content">
+            <div class="text-center p-5">جاري التحميل...</div>
+        </div>
+    </div>
+</div>
+<script>
+const API = '/api/v1/accounting';
+
+// مستوى الحساب = طول الكود (دليل الحسابات الهرمي: 1 → 11 → 1100 ...)
+function getNumLevel(code) {
+    return String(code || '').replace(/[^0-9]/g, '').length || 1;
+}
+
+async function loadReport() {
+    const from = document.getElementById('fromDate').value;
+    const to = document.getElementById('toDate').value;
+    const level = document.getElementById('f-level').value;
+    const type = document.getElementById('f-type').value;
+    const hideZero = document.getElementById('f-hide-zero').checked;
+
+    if (from && to && from > to) {
+        document.getElementById('report-content').innerHTML =
+            '<div class="alert alert-danger text-center mt-3"><i class="bi bi-exclamation-triangle"></i> خطأ: تاريخ البداية يجب أن يكون قبل تاريخ النهاية.</div>';
+        return;
+    }
+
+    const qs = new URLSearchParams();
+    if (from) qs.append('date_from', from);   // أسماء المعاملات الصحيحة للـ Backend
+    if (to) qs.append('date_to', to);
+
+    document.getElementById('report-content').innerHTML = '<div class="text-center p-5">جاري التحميل...</div>';
+
+    try {
+        const res = await fetch(`${API}/reports/trial-balance?${qs.toString()}`).then(r => r.json());
+        if (!res.success) { document.getElementById('report-content').innerHTML = `<div class="alert alert-danger">${res.message}</div>`; return; }
+
+        let allData = res.data.rows || [];
+
+        // تصفية حسب نوع القائمة — باستخدام account_type الفعلي من قاعدة البيانات
+        // لا نفلتر ببداية الكود لأن الترقيم يختلف بين الأدلة المحاسبية
+        if (type === 'income') {
+            allData = allData.filter(r => ['revenue', 'expense'].includes(r.account_type));
+        } else if (type === 'balance') {
+            allData = allData.filter(r => ['asset', 'liability', 'equity'].includes(r.account_type));
+        }
+
+        // تصفية المستوى (طول كود الحساب)
+        if (level !== '99') {
+            const target = parseInt(level);
+            allData = allData.filter(r => getNumLevel(r.code) <= target);
+        }
+
+        const fmt = (v) => (Number(v) || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        let totalOpeningDebit = 0, totalOpeningCredit = 0;
+        let totalPeriodDebit = 0, totalPeriodCredit = 0;
+        let totalClosingDebit = 0, totalClosingCredit = 0;
+
+        let html = `
+            <table class="table tb-table table-bordered align-middle">
+                <thead>
+                    <tr>
+                        <th rowspan="2">كود الحساب</th>
+                        <th rowspan="2">اسم الحساب</th>
+                        <th colspan="2">رصيد أول الفترة</th>
+                        <th colspan="2">حركة الفترة</th>
+                        <th colspan="2">رصيد آخر الفترة</th>
+                    </tr>
+                    <tr>
+                        <th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        let hasRows = false;
+
+        allData.forEach(r => {
+            // الباك-إند يرجع الأرصدة جاهزة بالطبيعة (مدين/دائن) — لا نحسب محليًا
+            const openDebit = Number(r.opening_debit) || 0;
+            const openCredit = Number(r.opening_credit) || 0;
+            const periodDebit = Number(r.debit) || 0;
+            const periodCredit = Number(r.credit) || 0;
+            const closingDebit = Number(r.closing_debit) || 0;
+            const closingCredit = Number(r.closing_credit) || 0;
+
+            // إخفاء الأصفار: السطر كله صفر (افتتاحي + حركة + ختامي)
+            if (hideZero && !openDebit && !openCredit && !periodDebit && !periodCredit && !closingDebit && !closingCredit) {
+                return;
+            }
+
+            hasRows = true;
+            totalOpeningDebit += openDebit;
+            totalOpeningCredit += openCredit;
+            totalPeriodDebit += periodDebit;
+            totalPeriodCredit += periodCredit;
+            totalClosingDebit += closingDebit;
+            totalClosingCredit += closingCredit;
+
+            html += `
+                <tr>
+                    <td class="text-center">${r.code}</td>
+                    <td>${r.name_ar}</td>
+                    <td class="num">${fmt(openDebit)}</td>
+                    <td class="num">${fmt(openCredit)}</td>
+                    <td class="num text-danger-custom">${fmt(periodDebit)}</td>
+                    <td class="num text-success-custom">${fmt(periodCredit)}</td>
+                    <td class="num">${fmt(closingDebit)}</td>
+                    <td class="num">${fmt(closingCredit)}</td>
+                </tr>`;
+        });
+
+        if (!hasRows) {
+            html += `<tr><td colspan="8" class="text-center text-muted p-4">لا توجد بيانات للعرض في هذه الفترة.</td></tr>`;
+        }
+
+        html += `</tbody><tfoot>
+            <tr class="total-row">
+                <td colspan="2" class="text-center">الإجمالي العام</td>
+                <td class="num">${fmt(totalOpeningDebit)}</td>
+                <td class="num">${fmt(totalOpeningCredit)}</td>
+                <td class="num text-danger-custom">${fmt(totalPeriodDebit)}</td>
+                <td class="num text-success-custom">${fmt(totalPeriodCredit)}</td>
+                <td class="num">${fmt(totalClosingDebit)}</td>
+                <td class="num">${fmt(totalClosingCredit)}</td>
+            </tr>
+        </tfoot></table>`;
+
+        // شريط توازن: الختامي مدين يجب = دائن (طالما القيود متوازنة)
+        const balanced = Math.abs(totalClosingDebit - totalClosingCredit) < 0.01;
+        html += balanced
+            ? `<div class="alert alert-success mt-2 py-2"><i class="bi bi-check-circle"></i> الميزان متوازن ✓ (مدين ${fmt(totalClosingDebit)} = دائن ${fmt(totalClosingCredit)})</div>`
+            : `<div class="alert alert-warning mt-2 py-2"><i class="bi bi-exclamation-triangle"></i> تنبيه: إجمالي الأرصدة الختامية غير متوازن — راجع قيد الإقفال للفترات السابقة أو قيودًا غير متوازنة.</div>`;
+
+        document.getElementById('report-content').innerHTML = html;
+
+    } catch (e) {
+        document.getElementById('report-content').innerHTML = `<div class="alert alert-danger">حدث خطأ: ${e.message}</div>`;
+    }
+}
+
+window.onload = () => {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('toDate').value = today;
+    document.getElementById('fromDate').value = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+    loadReport();
+};
+</script>
+</body>
+</html>
