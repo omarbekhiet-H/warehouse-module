@@ -35,13 +35,13 @@
 <div class="topbar d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
     <h3>🏭 {{ app_name }}</h3>
-    <span class="ver">الإصدار {{ version }} — لوحة القيادة الرئيسية (وضع القراءة، بدون تسجيل دخول)</span>
+    <span class="ver">الإصدار {{ version }} — لوحة القيادة الرئيسية</span>
   </div>
   <div class="quick-links">
     <a href="/docs" target="_blank">📚 الوثائق التفاعلية API</a>
-    <a href="{{ prefix }}/accounting/reports/print/balance-sheet?as_of={{ today_s }}&prior_as_of={{ prior_y }}" target="_blank">🖨️ ميزانية مقارنة</a>
-    <a href="{{ prefix }}/accounting/reports/print/income-statement?date_from={{ jan1 }}&date_to={{ today_s }}" target="_blank">🖨️ دخل مقارنة</a>
-    <a href="{{ prefix }}/hr/reports/payroll-sheet/print?period={{ current_period }}" target="_blank">🖨️ كشف رواتب</a>
+    <a href="#modules">🧩 الموديولات</a>
+    <a href="#screens">🖥️ الشاشات التفصيلية</a>
+    <a href="#links">🔗 دليل الروابط</a>
   </div>
 </div>
 
@@ -61,7 +61,8 @@
     </div>
   </div>
 
-  <!-- بطاقات الموديولات -->
+  <!-- بطاقات الموديولات (ملخص KPI فقط — الشاشات مفصلة بالجدول أدناه) -->
+  <h4 id="modules" class="mb-3" style="color:var(--erp-primary)">🧩 الموديولات الرئيسية</h4>
   <div class="row g-3">
     {% for m in modules %}
     <div class="col-md-6 col-xl-4">
@@ -79,26 +80,60 @@
             </div>
             {% endfor %}
           </div>
-          {% for l in m.links %}
-            <a class="btn-link-erp" href="{{ l.url }}" target="_blank">{{ l.text }}</a>
-          {% endfor %}
+          <a class="btn-link-erp" href="#screens" style="text-align:center">🖥️ عرض شاشات القسم ↓</a>
         </div>
       </div>
     </div>
     {% endfor %}
   </div>
 
+  <!-- الشاشات التفصيلية لكل قسم (تبويبات) -->
+  <h4 id="screens" class="mt-5 mb-3" style="color:var(--erp-primary)">🖥️ الشاشات التفصيلية لكل قسم</h4>
+  <div class="card card-erp">
+    <div class="module-body">
+      <ul class="nav nav-pills flex-wrap gap-1 mb-3" role="tablist">
+        {% for s in screens %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link {{ 'active' if loop.first else '' }}" data-bs-toggle="pill"
+                  data-bs-target="#scr-{{ loop.index }}" type="button" role="tab"
+                  style="background:{{ s.color }};color:#fff;font-weight:700">{{ s.icon }} {{ s.name }}</button>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="tab-content">
+        {% for s in screens %}
+        <div class="tab-pane fade {{ 'show active' if loop.first else '' }}" id="scr-{{ loop.index }}" role="tabpanel">
+          <p class="text-muted small mb-2">{{ s.description }}</p>
+          <div class="row g-2">
+            {% for grp in s.groups %}
+            <div class="col-md-6 col-lg-4">
+              <div class="border rounded p-2 h-100" style="border-color:#dbe7f3!important;background:#fbfdff">
+                <div class="fw-bold mb-2" style="color:var(--erp-primary);font-size:.9rem">{{ grp.title }}</div>
+                {% for sc in grp.screens %}
+                <a class="btn-link-erp" href="{{ sc.url }}" target="_blank" title="{{ sc.url }}">{{ sc.text }}</a>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
   <!-- جدول الروابط الشامل (كل الواجهات المسجلة) -->
-  <div class="card card-erp mt-4">
+  <div class="card card-erp mt-4" id="links">
     <div class="module-header" style="background:#3f5567">🔗 دليل الروابط والشاشات الكاملة</div>
     <div class="module-body p-0">
       <table class="status">
-        <thead><tr><th>القسم</th><th>الشاشة / التقرير</th><th>المسار</th></tr></thead>
+        <thead><tr><th>القسم</th><th>الشاشة / التقرير</th><th>نوع الشاشة</th><th>المسار</th></tr></thead>
         <tbody>
         {% for row in link_index %}
           <tr>
             <td>{{ row.module }}</td>
             <td>{{ row.name }}</td>
+            <td>{{ '🖨️ طباعة' if '/print' in row.url else ('📄 HTML' if row.url == '/' or row.url.startswith('/login') else ('⚙️ Swagger' if row.url == '/docs' else '🔌 JSON')) }}</td>
             <td><a href="{{ row.url }}" target="_blank" style="color:var(--erp-accent);text-decoration:none;direction:ltr;display:inline-block">{{ row.url }}</a></td>
           </tr>
         {% endfor %}
@@ -112,5 +147,6 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
