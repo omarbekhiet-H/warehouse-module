@@ -73,14 +73,15 @@ def post_invoice(db: Session, data: schemas.InvoiceCreate, user: dict) -> models
     db.add(invoice)
     db.flush()
 
-    # 1) خصم المخزون لكل سطر (يستدعي بدوره قيد المخزون المحاسبي)
+    # 1) خصم المخزون لكل سطر (يستدعي بدوره قيد COGS/المخزون المحاسبي بتكلفة الدفاتر)
     for line in invoice.lines:
         inv_services.post_movement(
             db,
             inv_schemas.MovementCreate(
                 item_id=line.item_id, warehouse_id=data.warehouse_id,
                 movement_type="out", qty=float(line.qty),
-                unit_cost=_item_cost(db, line.item_id),
+                unit_cost=None,   # تُشتق تلقائيًا من سياسة تقييم الصنف (std/avg) — لا تكلفة يدوية
+                source_doc=invoice.invoice_no,
                 remarks=f"صادر فاتورة بيع {invoice.invoice_no}",
             ),
             user,
@@ -115,12 +116,38 @@ def post_invoice(db: Session, data: schemas.InvoiceCreate, user: dict) -> models
     return invoice
 
 
-def register_payment(db: Session, invoice_id: int, amount: float) -> models.Invoice:
+def register_payment(db: Session, invoice_id: int, amount: float,
+                     user: dict | None = None) -> models.Invoice:
+    """تسجيل تحصيل من العميل مع قيده المحاسبي (مدين النقدية / دائن العميل).
+
+    مسار موصى به للنظام الكامل: التحصيلات الرسمية عبر سندات الخزينة (/treasury/vouchers)
+    المرتبطة بطرق السداد والتوزيع على الفواتير FIFO؛ هذه النقطة للمسار المبسّط."""
     inv = db.get(models.Invoice, invoice_id)
     if not inv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "الفاتورة غير موجودة")
-    if amount > float(inv.total) - float(inv.paid_amount):
+    if inv.status == "draft":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "لا يُحصَّل على فاتورة غير مرحّلة")
+    remaining = float(inv.total) - float(inv.paid_amount)
+    if amount > remaining:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "المبلغ أكبر من المتبقي على الفاتورة")
+
+    customer = db.get(models.Customer, inv.customer_id)
+    bank_acct = _get_or_create_account(db, "1100", "البنك / النقدية", "asset")
+    if customer and customer.receivable_account_id:
+        acc_services.create_journal_entry(
+            db,
+            acc_schemas.JournalEntryCreate(
+                date=dt.date.today(),
+                description=f"تحصيل من {customer.name_ar} — فاتورة {inv.invoice_no}",
+                lines=[
+                    acc_schemas.JournalLineIn(account_id=bank_acct, debit=amount, credit=0),
+                    acc_schemas.JournalLineIn(account_id=customer.receivable_account_id,
+                                              debit=0, credit=amount),
+                ],
+            ),
+            user or {"user_id": "system"}, source_module="sales", source_ref=inv.invoice_no,
+        )
+
     inv.paid_amount = float(inv.paid_amount) + amount
     if float(inv.paid_amount) >= float(inv.total):
         inv.status = "paid"
@@ -139,8 +166,17 @@ def _get_item(db: Session, item_id: int):
     return db.get(inv_models.Item, item_id)
 
 
-def _item_cost(db: Session, item_id: int) -> float:
-    return float(_get_item(db, item_id).purchase_price or 0)
+def _get_or_create_account(db: Session, code: str, name_ar: str, account_type: str) -> int:
+    from backend.modules.accounting import models as acc_models
+    from backend.modules.accounting import schemas as _acc_schemas
+    from backend.modules.accounting import services as _acc_services
+
+    acct = db.scalar(select(acc_models.Account).where(acc_models.Account.code == code))
+    if not acct:
+        acct = _acc_services.create_account(
+            db, _acc_schemas.AccountCreate(code=code, name_ar=name_ar,
+                                           account_type=account_type))
+    return acct.id
 
 
 def _revenue_account(db: Session) -> int:
@@ -153,6 +189,7 @@ def _revenue_account(db: Session) -> int:
 
 
 def _tax_account(db: Session) -> int | None:
+    """ضريبة القيمة المضافة على المبيعات (Output VAT — التزام 2200)."""
     from backend.modules.accounting import models as acc_models
     acct = db.scalar(select(acc_models.Account).where(acc_models.Account.code == "2200"))
     return acct.id if acct else None

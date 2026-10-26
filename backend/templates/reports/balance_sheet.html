@@ -1,0 +1,56 @@
+{% extends "base_report.html" %}
+{% block subtitle %}
+  <div class="report-meta">
+    المركز المالي كما في: {{ periods.current_as_of }}
+    {% if comparative and periods.prior_as_of %} &nbsp;|&nbsp; مقارنةً كما في: {{ periods.prior_as_of }}{% endif %}
+  </div>
+{% endblock %}
+{% block header_extra %}
+  {% if comparative %}
+    <span class="badge {{ 'badge-balanced' if totals.balanced else 'badge-unbalanced' }}">
+      {{ 'متوازنة ✓' if totals.balanced else 'غير متوازنة ✗' }}</span>
+  {% endif %}
+{% endblock %}
+{% block content %}
+{% macro section(label, sec) %}
+  <tr class="section-total"><td colspan="{{ 4 if comparative else 1 }}">{{ label }}</td>
+    <td class="num">{{ sec.total.current|money }}</td>
+    {% if comparative %}<td class="num">{{ sec.total.prior|money }}</td>
+      <td class="num {{ 'pos' if sec.total.change>=0 else 'neg' }}">{{ sec.total.change|money }}</td>
+      <td class="num">{{ sec.total.change_pct|pct }}</td>{% endif %}</tr>
+  {% for r in sec.rows %}
+    <tr><td class="ps-4">{{ r.name_ar }} <small class="text-muted">{{ r.code }}</small></td>
+      <td class="num">{{ r.current|money }}</td>
+      {% if comparative %}<td class="num">{{ r.prior|money }}</td>
+        <td class="num {{ 'pos' if (r.change or 0)>=0 else 'neg' }}">{{ r.change|money }}</td>
+        <td class="num">{{ r.change_pct|pct }}</td>{% endif %}</tr>
+  {% endfor %}
+{% endmacro %}
+<table class="report">
+  <thead><tr>
+    <th style="width:35%">البند</th>
+    <th class="num">{{ periods.current_as_of.split('-')[0] }}</th>
+    {% if comparative %}<th class="num">{{ periods.prior_as_of.split('-')[0] if periods.prior_as_of else 'السابق' }}</th>
+      <th class="num">التغير</th><th class="num">%</th>{% endif %}
+  </tr></thead>
+  <tbody>
+    {{ section('الأصول', sections.assets) }}
+    {{ section('الالتزامات', sections.liabilities) }}
+    {{ section('حقوق الملكية', sections.equity) }}
+    <tr><td class="ps-4">صافي دخل الفترة (أرباح محتجزة)</td>
+      <td class="num">{{ retained.current|money }}</td>
+      {% if comparative %}<td class="num">{{ retained.prior|money }}</td>
+        <td class="num">{{ retained.change|money }}</td><td class="num">{{ retained.change_pct|pct }}</td>{% endif %}</tr>
+    <tr class="grand-total"><td>إجمالي الأصول</td>
+      <td class="num">{{ totals.total_assets.current|money }}</td>
+      {% if comparative %}<td class="num">{{ totals.total_assets.prior|money }}</td>
+        <td class="num">{{ totals.total_assets.change|money }}</td>
+        <td class="num">{{ totals.total_assets.change_pct|pct }}</td>{% endif %}</tr>
+    <tr class="grand-total"><td>إجمالي الالتزامات وحقوق الملكية</td>
+      <td class="num">{{ totals.total_liabilities_equity.current|money }}</td>
+      {% if comparative %}<td class="num">{{ totals.total_liabilities_equity.prior|money }}</td>
+        <td class="num">{{ totals.total_liabilities_equity.change|money }}</td>
+        <td class="num">{{ totals.total_liabilities_equity.change_pct|pct }}</td>{% endif %}</tr>
+  </tbody>
+</table>
+{% endblock %}

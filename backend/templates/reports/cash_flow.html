@@ -1,0 +1,56 @@
+{% extends "base_report.html" %}
+{% block subtitle %}
+  <div class="report-meta">
+    الفترة الحالية: {{ periods.current.from }} — {{ periods.current.to }}
+    &nbsp;|&nbsp; المقارنة: {{ periods.prior.from }} — {{ periods.prior.to }}
+  </div>
+{% endblock %}
+{% block content %}
+<table class="report">
+  <thead><tr>
+    <th style="width:40%">البند (طريقة غير مباشرة)</th>
+    <th class="num">الحالية</th><th class="num">المقارنة</th>
+    <th class="num">التغير</th><th class="num">%</th>
+  </tr></thead>
+  <tbody>
+    <tr class="section-total"><td>أنشطة التشغيل</td><td></td><td></td><td></td><td></td></tr>
+    {% for l in lines %}
+      <tr><td class="ps-4">{{ l.label }}</td>
+        <td class="num">{{ l.current|money }}</td>
+        <td class="num">{{ l.prior|money }}</td>
+        <td class="num {{ 'pos' if (l.change or 0)>=0 else 'neg' }}">{{ l.change|money }}</td>
+        <td class="num">{{ l.change_pct|pct }}</td></tr>
+    {% endfor %}
+    <tr class="section-total"><td>صافي النقد من أنشطة التشغيل</td>
+      <td class="num">{{ operating_total.current|money }}</td>
+      <td class="num">{{ operating_total.prior|money }}</td>
+      <td class="num">{{ operating_total.change|money }}</td>
+      <td class="num">{{ operating_total.change_pct|pct }}</td></tr>
+    <tr class="section-total"><td>أنشطة الاستثمار والتمويل</td><td></td><td></td><td></td><td></td></tr>
+    {% set prior_map = {} %}
+    {% for x in investing_financing_prior %}{% set _ = prior_map.update({x.label: x.amount}) %}{% endfor %}
+    {% for x in investing_financing %}
+      {% set pv = prior_map.get(x.label, 0) %}
+      <tr><td class="ps-4">{{ x.label }}</td>
+        <td class="num">{{ x.amount|money }}</td><td class="num">{{ pv|money }}</td>
+        <td class="num">{{ (x.amount - pv)|money }}</td><td class="num">—</td></tr>
+    {% endfor %}
+    <tr class="section-total"><td>صافي الأنشطة الاستثمارية/التمويلية</td>
+      <td class="num">{{ investing_financing_total.current|money }}</td>
+      <td class="num">{{ investing_financing_total.prior|money }}</td>
+      <td class="num">{{ investing_financing_total.change|money }}</td>
+      <td class="num">{{ investing_financing_total.change_pct|pct }}</td></tr>
+    <tr class="grand-total"><td>صافي التغير في النقدية</td>
+      <td class="num">{{ net_change.current|money }}</td>
+      <td class="num">{{ net_change.prior|money }}</td>
+      <td class="num {{ 'pos' if net_change.change>=0 else 'neg' }}">{{ net_change.change|money }}</td>
+      <td class="num">{{ net_change.change_pct|pct }}</td></tr>
+    <tr><td class="text-muted small">تطابق مع أرصدة البنك والصندوق الدفترية</td>
+      <td class="num">{{ cash_delta_cur|money }}</td><td class="num">{{ cash_delta_pri|money }}</td>
+      <td colspan="2">
+        <span class="badge {{ 'badge-balanced' if reconciles_cur else 'badge-unbalanced' }}">الحالية: {{ 'مطابق ✓' if reconciles_cur else 'فرق ✗' }}</span>
+        <span class="badge {{ 'badge-balanced' if reconciles_pri else 'badge-unbalanced' }}">المقارنة: {{ 'مطابق ✓' if reconciles_pri else 'فرق ✗' }}</span>
+      </td></tr>
+  </tbody>
+</table>
+{% endblock %}

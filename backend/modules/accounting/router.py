@@ -77,3 +77,55 @@ def trial_balance(date_from: dt.date | None = None, date_to: dt.date | None = No
         "total_credit": round(sum(r["credit"] for r in rows), 4),
     }
     return ApiResponse.ok({"rows": rows, "totals": totals})
+
+
+@router.get("/reports/balance-sheet", response_model=ApiResponse, summary="قائمة المركز المالي (الميزانية)")
+def balance_sheet(as_of: dt.date | None = None, db: Session = Depends(get_db)):
+    """أصول = التزامات + حقوق ملكية؛ صافي الدخل يُضاف لأرباح محتجزة تلقائيًا."""
+    return ApiResponse.ok(services.balance_sheet(db, as_of))
+
+
+@router.get("/reports/income-statement", response_model=ApiResponse, summary="قائمة الدخل")
+def income_statement(date_from: dt.date | None = None, date_to: dt.date | None = None,
+                     db: Session = Depends(get_db)):
+    return ApiResponse.ok(services.income_statement(db, date_from, date_to))
+
+
+# ---------- القوائم المالية المقارنة (Comparative Financial Statements) ----------
+@router.get("/reports/comparative/income-statement", response_model=ApiResponse,
+            summary="قائمة الدخل المقارنة (سنة حالية vs سنة سابقة)")
+def comparative_income_statement(
+    date_from: dt.date = Query(..., description="بداية الفترة الحالية"),
+    date_to: dt.date = Query(..., description="نهاية الفترة الحالية"),
+    comparison_type: str = Query("yoy", pattern="^(yoy|mom|custom)$",
+                                 description="yoy=نفس الفترة السنة السابقة، mom=الشهر السابق، custom=فترة مخصصة"),
+    custom_from: dt.date | None = None,
+    custom_to: dt.date | None = None,
+    db: Session = Depends(get_db),
+):
+    return ApiResponse.ok(services.income_statement_comparative(
+        db, date_from, date_to, comparison_type, custom_from, custom_to))
+
+
+@router.get("/reports/comparative/balance-sheet", response_model=ApiResponse,
+            summary="قائمة المركز المالي المقارنة")
+def comparative_balance_sheet(
+    as_of: dt.date = Query(..., description="تاريخ نهاية الفترة الحالية"),
+    prior_as_of: dt.date | None = Query(None, description="تاريخ نهاية الفترة المقارنة (افتراضيًا نفس اليوم من السنة السابقة)"),
+    db: Session = Depends(get_db),
+):
+    return ApiResponse.ok(services.balance_sheet_comparative(db, as_of, prior_cutoff=prior_as_of))
+
+
+@router.get("/reports/comparative/cash-flow", response_model=ApiResponse,
+            summary="قائمة التدفقات النقدية المقارنة (غير مباشرة)")
+def comparative_cash_flow(
+    date_from: dt.date = Query(..., description="بداية الفترة الحالية"),
+    date_to: dt.date = Query(..., description="نهاية الفترة الحالية"),
+    comparison_type: str = Query("yoy", pattern="^(yoy|mom|custom)$"),
+    custom_from: dt.date | None = None,
+    custom_to: dt.date | None = None,
+    db: Session = Depends(get_db),
+):
+    return ApiResponse.ok(services.cash_flow_comparative(
+        db, date_from, date_to, comparison_type, custom_from, custom_to))

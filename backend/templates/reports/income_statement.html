@@ -1,0 +1,54 @@
+{% extends "base_report.html" %}
+{% block subtitle %}
+  <div class="report-meta">
+    الفترة الحالية: {{ periods.current.from }} — {{ periods.current.to }}
+    {% if comparative and periods.prior %}
+      &nbsp;|&nbsp; فترة المقارنة: {{ periods.prior.from }} — {{ periods.prior.to }}
+      ({{ 'سنوية YoY' if periods.comparison_type=='yoy' else ('شهرية MoM' if periods.comparison_type=='mom' else 'مخصصة') }})
+    {% endif %}
+  </div>
+{% endblock %}
+{% block content %}
+<table class="report">
+  <thead>
+    <tr>
+      <th style="width:35%">البند</th>
+      <th class="num">{{ periods.current.to.split('-')[0] if comparative else 'الحالية' }}</th>
+      {% if comparative %}<th class="num">{{ periods.prior.to.split('-')[0] }}</th>{% endif %}
+      {% if comparative %}<th class="num">التغير</th><th class="num">%</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="section-total"><td colspan="{{ 4 if comparative else 1 }}">الإيرادات</td>
+      <td class="num">{{ totals.revenue.current|money }}</td>
+      {% if comparative %}<td class="num">{{ totals.revenue.prior|money }}</td>
+        <td class="num {{ 'pos' if totals.revenue.change>=0 else 'neg' }}">{{ totals.revenue.change|money }}</td>
+        <td class="num {{ 'pos' if (totals.revenue.change_pct or 0)>=0 else 'neg' }}">{{ totals.revenue.change_pct|pct }}</td>
+      {% endif %}</tr>
+    {% for r in revenue %}
+      <tr><td class="ps-4">{{ r.name_ar }} <small class="text-muted">{{ r.code }}</small></td>
+        <td class="num">{{ r.current|money }}</td>
+        {% if comparative %}<td class="num">{{ r.prior|money }}</td>
+          <td class="num {{ 'pos' if (r.change or 0)>=0 else 'neg' }}">{{ r.change|money }}</td>
+          <td class="num">{{ r.change_pct|pct }}</td>{% endif %}</tr>
+    {% endfor %}
+    <tr class="section-total"><td colspan="{{ 4 if comparative else 1 }}">إجمالي المصروفات</td>
+      <td class="num">{{ totals.expenses.current|money }}</td>
+      {% if comparative %}<td class="num">{{ totals.expenses.prior|money }}</td>
+        <td class="num">{{ totals.expenses.change|money }}</td>
+        <td class="num">{{ totals.expenses.change_pct|pct }}</td>{% endif %}</tr>
+    {% for r in expenses %}
+      <tr><td class="ps-4">{{ r.name_ar }} <small class="text-muted">{{ r.code }}</small></td>
+        <td class="num">{{ r.current|money }}</td>
+        {% if comparative %}<td class="num">{{ r.prior|money }}</td>
+          <td class="num {{ 'neg' if (r.change or 0)>0 else 'pos' }}">{{ r.change|money }}</td>
+          <td class="num">{{ r.change_pct|pct }}</td>{% endif %}</tr>
+    {% endfor %}
+    <tr class="grand-total"><td>صافي {{ 'الربح/الخسارة' if totals.net_income.current>=0 else 'الخسارة' }}</td>
+      <td class="num">{{ totals.net_income.current|money }}</td>
+      {% if comparative %}<td class="num">{{ totals.net_income.prior|money }}</td>
+        <td class="num {{ 'pos' if totals.net_income.change>=0 else 'neg' }}">{{ totals.net_income.change|money }}</td>
+        <td class="num">{{ totals.net_income.change_pct|pct }}</td>{% endif %}</tr>
+  </tbody>
+</table>
+{% endblock %}

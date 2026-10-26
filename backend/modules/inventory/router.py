@@ -58,6 +58,48 @@ def post_movement(data: schemas.MovementCreate,
     return ApiResponse.ok(schemas.MovementOut.model_validate(mv), message="تم تسجيل الحركة والقيود المرتبطة")
 
 
+@router.get("/movements", response_model=ApiResponse[list[schemas.MovementOut]], summary="سجل الحركات")
+def get_movements(item_id: int | None = None, warehouse_id: int | None = None,
+                  source_doc: str | None = None, db: Session = Depends(get_db)):
+    """سجل حركة تفصيلي — يمكن تصفيته بصنف/مخزن/مستند أصلي (MR / PO / STK ...)."""
+    rows = services.get_movements(db, item_id, warehouse_id, source_doc)
+    return ApiResponse.ok([schemas.MovementOut.model_validate(m) for m in rows])
+
+
 @router.get("/reports/stock", response_model=ApiResponse[list[schemas.StockLevel]], summary="تقرير الرصيد الحالي")
 def stock_report(db: Session = Depends(get_db)):
     return ApiResponse.ok(services.stock_report(db))
+
+
+@router.get("/reports/valuation", summary="تقرير تقييم المخزون الدفتري (IAS 2)")
+def valuation_report(db: Session = Depends(get_db)):
+    """إجمالي التقييم بـ (كمية × تكلفة بالطريقة المعتمدة لكل صنف) — يجب أن يوافق حساب المخزون بالأستاذ."""
+    return ApiResponse.ok(services.valuation_report(db))
+
+
+# ---------- الجرد والتسويات ----------
+@router.post("/counts", response_model=ApiResponse[schemas.StockCountOut], summary="إنشاء ورقة جرد")
+def create_stock_count(data: schemas.StockCountCreate,
+                       db: Session = Depends(get_db),
+                       user: dict = Depends(get_current_user)):
+    count = services.create_stock_count(db, data, user)
+    return ApiResponse.ok(schemas.StockCountOut.model_validate(count),
+                          message="تم إنشاء ورقة الجرد مع حساب الفروق")
+
+
+@router.post("/counts/{count_id}/post", response_model=ApiResponse[schemas.StockCountOut],
+             summary="اعتماد الجرد وإصدار التسويات المحاسبية")
+def post_stock_count(count_id: int,
+                     auto_adjustments: bool | None = None,
+                     db: Session = Depends(get_db),
+                     user: dict = Depends(get_current_user)):
+    """اعتماد الجرد. مرر auto_adjustments=false للترحيل كمراجعة فقط دون قيود تسوية."""
+    count = services.post_stock_count(db, count_id, user, auto_adjustments=auto_adjustments)
+    return ApiResponse.ok(schemas.StockCountOut.model_validate(count),
+                          message="تم اعتماد الجرد وإصدار حركات التسوية وقيودها")
+
+
+@router.get("/counts", response_model=ApiResponse[list[schemas.StockCountOut]], summary="قائمة أوراق الجرد")
+def list_stock_counts(db: Session = Depends(get_db)):
+    return ApiResponse.ok([schemas.StockCountOut.model_validate(c)
+                           for c in services.list_stock_counts(db)])

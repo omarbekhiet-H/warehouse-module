@@ -49,6 +49,8 @@ def list_invoices(db: Session = Depends(get_db)):
 
 @router.post("/invoices/{invoice_id}/payments", response_model=ApiResponse[schemas.InvoiceOut],
              summary="تسجيل دفعة على فاتورة")
-def register_payment(invoice_id: int, data: schemas.PaymentIn, db: Session = Depends(get_db)):
-    inv = services.register_payment(db, invoice_id, data.amount)
-    return ApiResponse.ok(schemas.InvoiceOut.model_validate(inv), message="تم تسجيل الدفعة")
+def register_payment(invoice_id: int, data: schemas.PaymentIn,
+                     db: Session = Depends(get_db),
+                     user: dict = Depends(get_current_user)):
+    inv = services.register_payment(db, invoice_id, data.amount, user)
+    return ApiResponse.ok(schemas.InvoiceOut.model_validate(inv), message="تم تسجيل الدفعة مع قيدها المحاسبي")
