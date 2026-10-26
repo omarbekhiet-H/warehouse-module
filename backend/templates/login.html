@@ -65,9 +65,9 @@ async function doLogin(e){
     });
     const j = await r.json();
     if(r.ok && j.success){
-      sessionStorage.setItem('erp_token', j.data.access_token);
-      sessionStorage.setItem('erp_refresh', j.data.refresh_token);
-      sessionStorage.setItem('erp_user', JSON.stringify({username: document.getElementById('username').value.trim()}));
+      localStorage.setItem('erp_token', j.data.access_token);
+      localStorage.setItem('erp_refresh', j.data.refresh_token);
+      localStorage.setItem('erp_user', JSON.stringify({username: document.getElementById('username').value.trim()}));
       if(j.data.must_change_password)
         document.getElementById('mustChange').style.display='block';
       location.href = '/';
