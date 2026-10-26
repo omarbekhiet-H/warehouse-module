@@ -507,6 +507,114 @@ def _has(accounts: list[models.Account], code: str) -> bool:
     return any(a.code == code for a in accounts)
 
 
+def income_statement(db: Session, date_from: dt.date | None = None,
+                     date_to: dt.date | None = None) -> dict:
+    """قائمة الدخل لفترة محددة — حركة الفترة فقط (Period Activity).
+
+    قاعدة مهنية صارمة: لا تُخلط الأرصدة الافتتاحية/المتراكمة مع حركة الفترة.
+    الإيرادات والمصروفات طبيعة حساباتها دورية وتُصفَّر بقيد الإقفال، لذا أي
+    رصيد متراكم يظهر هنا يعني قيدًا غير مقفول أو غير متوازن — يُنبَّه عليه.
+    صافي الربح = إجمالي الإيرادات − إجمالي المصروفات حتمًا (لا أرقام وسيطة).
+    """
+    today = dt.date.today()
+    p_from = date_from or dt.date(today.year, 1, 1)
+    p_to = date_to or today
+    act = _period_activity(db, p_from, p_to)
+    accounts = _load_accounts(db)
+
+    def rows_of(atype: str) -> tuple[list[dict], float]:
+        out, total = [], 0.0
+        for a in accounts:
+            if a.account_type != atype:
+                continue
+            v = act.get(a.id, {"debit": 0.0, "credit": 0.0})
+            sign = 1 if atype == "revenue" else -1
+            bal = round((v["credit"] - v["debit"]) * sign, 4)
+            if bal == 0:
+                continue
+            out.append({"code": a.code, "name_ar": a.name_ar, "amount": bal})
+            total += bal
+        return out, round(total, 4)
+
+    rev_rows, rev_total = rows_of("revenue")
+    exp_rows, exp_total = rows_of("expense")
+    net = round(rev_total - exp_total, 4)
+
+    warnings = []
+    # تنبيه سلامة: رصيد متراكم لحسابات دورية حتى نهاية الفترة = قيود إقفال مفقودة
+    cum = _account_balances_asof(db, p_to)
+    for a in accounts:
+        if a.account_type not in ("revenue", "expense"):
+            continue
+        v = cum.get(a.id, {"debit": 0.0, "credit": 0.0})
+        leftover = round(v["credit"] - v["debit"], 4)
+        if abs(leftover) > 0.005 and abs(act.get(a.id, {}).get("credit", 0.0)
+                                        - act.get(a.id, {}).get("debit", 0.0)) < 0.005:
+            warnings.append(
+                f"الحساب {a.code} ({a.name_ar}): رصيد متراكم {leftover:,.2f} بدون حركة في الفترة — "
+                f"يحتاج قيد إقفال للفترات السابقة.")
+    for e in unbalanced_entries(db, p_from, p_to):
+        warnings.append(
+            f"قيد غير متوازن ({e['entry_no']}): مدين {e['total_debit']:,.2f} ≠ "
+            f"دائن {e['total_credit']:,.2f} — الفرق {e['difference']:,.2f}.")
+
+    return {
+        "title": "قائمة الدخل",
+        "period": {"from": p_from.isoformat(), "to": p_to.isoformat()},
+        "revenue": rev_rows,
+        "expenses": exp_rows,
+        "total_revenue": rev_total,
+        "total_expenses": exp_total,
+        "net_income": net,
+        "basis": "حركة الفترة فقط (Period Activity) — لا تشمل الأرصدة الافتتاحية",
+        "data_warnings": warnings,
+    }
+
+
+def balance_sheet(db: Session, as_of: dt.date | None = None) -> dict:
+    """قائمة المركز المالي عند تاريخ محدد — أرصدة تراكمية للحسابات الدائمة فقط."""
+    cutoff = as_of or dt.date.today()
+    bals = _account_balances_asof(db, cutoff)
+    accounts = _load_accounts(db)
+
+    def section(atype: str) -> tuple[list[dict], float]:
+        out, total = [], 0.0
+        for a in accounts:
+            if a.account_type != atype:
+                continue
+            v = bals.get(a.id, {"debit": 0.0, "credit": 0.0})
+            bal = round((v["debit"] - v["credit"]) * _natural(a.account_type), 4)
+            if bal == 0:
+                continue
+            out.append({"code": a.code, "name_ar": a.name_ar, "amount": bal})
+            total += bal
+        return out, round(total, 4)
+
+    assets, ta = section("asset")
+    liabilities, tl = section("liability")
+    equity, te = section("equity")
+    # صافي دخل الفترات المفتوحة (إيرادات − مصروفات متراكمة) يضاف للأرباح المحتجزة
+    rev_cum = sum(round((v["credit"] - v["debit"]), 4)
+                  for a in accounts if a.account_type == "revenue"
+                  for v in [bals.get(a.id, {"debit": 0.0, "credit": 0.0})])
+    exp_cum = sum(round((v["debit"] - v["credit"]), 4)
+                  for a in accounts if a.account_type == "expense"
+                  for v in [bals.get(a.id, {"debit": 0.0, "credit": 0.0})])
+    ni = round(rev_cum - exp_cum, 4)
+    warnings = [f"قيد غير متوازن ({e['entry_no']})" for e in unbalanced_entries(db, None, cutoff)]
+    return {
+        "title": "قائمة المركز المالي",
+        "as_of": cutoff.isoformat(),
+        "assets": assets, "total_assets": ta,
+        "liabilities": liabilities, "total_liabilities": tl,
+        "equity": equity, "total_equity": te,
+        "net_income": ni,
+        "total_liabilities_equity": round(tl + te + ni, 4),
+        "balanced": abs(ta - (tl + te + ni)) < 0.01,
+        "data_warnings": warnings,
+    }
+
+
 def trial_balance(db: Session, date_from: dt.date | None = None,
                   date_to: dt.date | None = None):
     stmt = (
