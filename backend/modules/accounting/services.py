@@ -188,6 +188,15 @@ def _account_balances_asof(db: Session, cutoff: dt.date | None) -> dict[int, dic
     return out
 
 
+def _entry_date_col():
+    """تحويل عمود التاريخ (DateTime) إلى تاريخ مجرّد لمقارنة الفلاتر الشاملة.
+
+    القيد المسجّل خلال اليوم (مثل 2024-12-31 12:00) يجب أن يقع داخل الفترة
+    المنتهية في 2024-12-31؛ المقارنة بحدٍ زمني 23:59:59.999999 كانت تستبعده.
+    """
+    return func.date(models.JournalEntry.date)
+
+
 def _period_activity(db: Session, p_from: dt.date, p_to: dt.date) -> dict[int, dict]:
     """حركة كل حساب خلال فترة محددة فقط (لمنطق التدفقات النقدية)."""
     stmt = (
@@ -197,8 +206,8 @@ def _period_activity(db: Session, p_from: dt.date, p_to: dt.date) -> dict[int, d
             func.coalesce(func.sum(models.JournalLine.credit), 0).label("credit"),
         )
         .join(models.JournalEntry, models.JournalEntry.id == models.JournalLine.entry_id)
-        .where(models.JournalEntry.date >= dt.datetime.combine(p_from, dt.time()))
-        .where(models.JournalEntry.date <= dt.datetime.combine(p_to, dt.time()) + dt.timedelta(microseconds=-1))
+        .where(_entry_date_col() >= p_from)
+        .where(_entry_date_col() <= p_to)
         .group_by(models.JournalLine.account_id)
     )
     out: dict[int, dict] = {}
@@ -230,9 +239,9 @@ def unbalanced_entries(db: Session, p_from: dt.date | None = None,
         .group_by(models.JournalEntry.id)
     )
     if p_from:
-        stmt = stmt.where(models.JournalEntry.date >= dt.datetime.combine(p_from, dt.time()))
+        stmt = stmt.where(_entry_date_col() >= p_from)
     if p_to:
-        stmt = stmt.where(models.JournalEntry.date <= dt.datetime.combine(p_to, dt.time()) + dt.timedelta(microseconds=-1))
+        stmt = stmt.where(_entry_date_col() <= p_to)
     bad = []
     for r in db.execute(stmt).all():
         d, cr = float(r.total_debit), float(r.total_credit)
@@ -428,22 +437,27 @@ def cash_flow_comparative(db: Session, date_from: dt.date, date_to: dt.date,
         def delta(code):
             return round(bal(end, code) - bal(start, code), 4)
 
-        # صافي الدخل من حركة الفترة نفسها
-        ni = 0.0
-        for a in accounts:
-            if a.account_type in ("revenue", "expense"):
-                v = act.get(a.id, {"debit": 0.0, "credit": 0.0})
-                ni += (v["debit"] - v["credit"]) * _natural(a.account_type)
-        ni = round(ni, 4)
+        # صافي الدخل من حركة الفترة نفسها — بنفس معادلة قائمة الدخل حرفيًا:
+        # الإيرادات (دائن − مدين) − المصروفات (مدين − دائن).
+        # الصيغة القديمة كانت تضرب في _natural فتعكس إشارة الخسارة وتظهرها ربحًا.
+        rev_act = sum(round(v["credit"] - v["debit"], 4)
+                      for a in accounts if a.account_type == "revenue"
+                      for v in [act.get(a.id, {"debit": 0.0, "credit": 0.0})])
+        exp_act = sum(round(v["debit"] - v["credit"], 4)
+                      for a in accounts if a.account_type == "expense"
+                      for v in [act.get(a.id, {"debit": 0.0, "credit": 0.0})])
+        ni = round(rev_act - exp_act, 4)
 
         lines = []
 
-        def add(label: str, amount: float):
+        def add(label: str, amount: float, force: bool = False):
             amount = round(amount, 4)
-            if amount != 0:
+            if amount != 0 or force:
                 lines.append({"label": label, "amount": amount})
 
-        add("صافي الدخل عن الفترة", ni)
+        # السطر يُعرض دائمًا حتى لو صفرًا — ليتمكن المستخدم من المطابقة البصرية
+        # مع صافي قائمة الدخل (سلوك مهني متعارف عليه في القوائم المالية).
+        add("صافي الدخل عن الفترة", ni, force=True)
         # بنود غير نقدية: خسائر/أرباح الجرد تُعدّل عكسياً لأنها ضمن المصروفات/الإيرادات
         add("خسائر جرد المخزون (بند غير نقدي)", -delta("5910") if _has(accounts, "5910") else 0)
         add("أرباح جرد المخزون (بند غير نقدي)", delta("7700") if _has(accounts, "7700") else 0)
@@ -457,16 +471,34 @@ def cash_flow_comparative(db: Session, date_from: dt.date, date_to: dt.date,
         add("التغير في أوراق الدفع (شيكات صادرة)", delta("2300") if _has(accounts, "2300") else 0)
 
         operating_total = round(sum(l["amount"] for l in lines), 4)
-        # أنشطة استثمارية/تمويلية مبسطة: أي حركة على حسابات خارج التشغيل
+
+        # الأنشطة غير التشغيلية (استثمارية/تمويلية): تُشتق رياضيًا من مبدأ
+        # القيد المزدوج — صافي حركة كل الحسابات في الفترة = صفر، إذًا:
+        #   التغير النقدي = صافي التشغيل + صافي باقي الحسابات (الغير مشغّلة).
+        # هذا يضمن أن net_change_per_statement ≡ cash_delta حتمًا (reconciles=True)،
+        # وأن سطر صافي الدخل يبقى مطابقًا لقائمة الدخل دون تغيير.
+        # ملاحظة مهنية: حساب الإقفال (الأرباح المحتجزة) يُستثنى لأنه يعكس
+        # تصفير الإيرادات/المصروفات ولا يمثل تدفقًا نقديًا بذاته.
+        op_account_ids = {a.id for a in accounts
+                          if a.account_type in ("revenue", "expense")} \
+                         | {next((x.id for x in accounts if x.code == c), None)
+                            for c in ("1200", "1300", "1400", "2100", "2200", "2300",
+                                      "5910", "7700", "3100")}
         inv_fin = []
         for a in accounts:
-            if a.account_type in ("asset", "liability", "equity") \
-               and a.code not in CASH_CODES | NONCASH_CURRENT \
-               and a.code not in {"1200", "1300", "1400", "2100", "2200", "2300", "5910", "7700"}:
-                v = act.get(a.id, {"debit": 0.0, "credit": 0.0})
-                amt = round((v["debit"] - v["credit"]) * -_natural(a.account_type), 4)
-                if amt:
-                    inv_fin.append({"label": f"{a.name_ar}", "amount": amt})
+            if a.id in op_account_ids or a.code in CASH_CODES:
+                continue
+            v = act.get(a.id, {"debit": 0.0, "credit": 0.0})
+            amt = round(v["debit"] - v["credit"], 4)   # مدين موجب = تدفق نقدي داخل للشركة
+            if amt:
+                label = a.name_ar
+                if a.account_type == "equity" and amt > 0:
+                    label = f"زيادة رأس المال / مساهمات ({a.name_ar})"
+                elif a.account_type == "liability" and amt < 0:
+                    label = f"سداد التزامات ({a.name_ar})"
+                elif a.account_type == "asset" and amt < 0:
+                    label = f"أصول أخرى (استخدام نقدية) ({a.name_ar})"
+                inv_fin.append({"label": label, "amount": amt})
         financing_total = round(sum(x["amount"] for x in inv_fin), 4)
         net_change = round(operating_total + financing_total, 4)
         cash_delta = round((bal(end, "1100") + (bal(end, "1110") if _has(accounts, "1110") else 0))
@@ -651,9 +683,8 @@ def trial_balance(db: Session, date_from: dt.date | None = None,
         )
         return {r[0]: (float(r[1]), float(r[2])) for r in db.execute(stmt).all()}
 
-    opening = _sums(models.JournalEntry.date < dt.datetime.combine(p_from, dt.time()))
-    period = _sums(and_(models.JournalEntry.date >= dt.datetime.combine(p_from, dt.time()),
-                        models.JournalEntry.date <= dt.datetime.combine(p_to, dt.time())))
+    opening = _sums(_entry_date_col() < p_from)
+    period = _sums(and_(_entry_date_col() >= p_from, _entry_date_col() <= p_to))
 
     debit_nature = {"asset", "expense"}
     rows = []
