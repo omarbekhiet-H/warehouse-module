@@ -170,8 +170,10 @@ def login_page(request: Request):
 
     from fastapi.templating import Jinja2Templates
     tpl = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-    resp = tpl.TemplateResponse("login.html", {
-        "request": request, "app_name": settings.APP_NAME, "version": "1.0.0",
+    # ملاحظة توافق: Starlette >= 0.38 يعتمد التوقيع (request, name, context)؛
+    # القالب لا يحتاج "request" داخل الـ context لأنه يُضبط تلقائيًا.
+    resp = tpl.TemplateResponse(request, "login.html", {
+        "app_name": settings.APP_NAME, "version": "1.0.0",
     })
     resp.delete_cookie("erp_session")
     return resp
@@ -495,8 +497,7 @@ def dashboard(request: Request):
                     seen_urls.add(sc["url"])
                     link_index.append({"module": s["name"], "name": sc["text"].split(" ", 1)[-1], "url": sc["url"]})
 
-    return tpl.TemplateResponse("dashboard.html", {
-        "request": request,
+    return tpl.TemplateResponse(request, "dashboard.html", {
         "app_name": settings.APP_NAME,
         "version": "1.0.0",
         "prefix": P,

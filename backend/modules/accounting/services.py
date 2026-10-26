@@ -199,6 +199,44 @@ def _period_activity(db: Session, p_from: dt.date, p_to: dt.date) -> dict[int, d
     return out
 
 
+def unbalanced_entries(db: Session, p_from: dt.date | None = None,
+                       p_to: dt.date | None = None) -> list[dict]:
+    """قيد يومية غير متوازن = مدين ≠ دائن.
+
+    هذا الفحص هو مصدر أخطاء شائعة في القوائم المالية: قيد يدوي ناقص الجانب
+    يجعل مصروفات الفترة منتفخة أو الإيرادات صفرًا مع بقاء الأرصدة الشكلية،
+    فيظهر النظام ربحًا لا ينتج من المعادلة المعروضة على الشاشة.
+    يعيد قائمة بالقيد المخالف وقيمتي المدين والدائن والفارق بينهما.
+    """
+    stmt = (
+        select(
+            models.JournalEntry.id.label("entry_id"),
+            models.JournalEntry.entry_no,
+            models.JournalEntry.date,
+            models.JournalEntry.description,
+            models.JournalEntry.source_module,
+            func.coalesce(func.sum(models.JournalLine.debit), 0).label("total_debit"),
+            func.coalesce(func.sum(models.JournalLine.credit), 0).label("total_credit"),
+        )
+        .join(models.JournalLine, models.JournalLine.entry_id == models.JournalEntry.id)
+        .group_by(models.JournalEntry.id)
+    )
+    if p_from:
+        stmt = stmt.where(models.JournalEntry.date >= dt.datetime.combine(p_from, dt.time()))
+    if p_to:
+        stmt = stmt.where(models.JournalEntry.date <= dt.datetime.combine(p_to, dt.time()) + dt.timedelta(microseconds=-1))
+    bad = []
+    for r in db.execute(stmt).all():
+        d, cr = float(r.total_debit), float(r.total_credit)
+        if abs(d - cr) > 0.005:
+            bad.append({"entry_id": r.entry_id, "entry_no": r.entry_no,
+                        "date": r.date.isoformat() if isinstance(r.date, (dt.date, dt.datetime)) else str(r.date),
+                        "description": r.description, "source_module": r.source_module,
+                        "total_debit": round(d, 4), "total_credit": round(cr, 4),
+                        "difference": round(d - cr, 4)})
+    return bad
+
+
 def _natural(a_type: str) -> int:
     """الرصيد الطبيعي: الأصول والمصروفات مدينة، والبقية دائنة."""
     return 1 if a_type in ("asset", "expense") else -1
@@ -252,8 +290,20 @@ def income_statement_comparative(db: Session, date_from: dt.date, date_to: dt.da
 
     net_cur = round(cur_rev - cur_exp, 4)
     net_pri = round(pri_rev - pri_exp, 4)
+    # فحص سلامة البيانات: أي قيد غير متوازن داخل الفترتين يجعل الأرقام المعروضة
+    # لا تنتج معادلة الشاشة (مثل ربح لا يساوي الإيراد - المصروفات). يُدرج التحذير
+    # في الاستجابة ليظهر على التقرير نفسه بدل الصمت.
+    warnings = []
+    for label, pf, pt in (("الفترة الحالية", per["current"]["from"], per["current"]["to"]),
+                          ("فترة المقارنة", per["prior"]["from"], per["prior"]["to"])):
+        for e in unbalanced_entries(db, pf, pt):
+            warnings.append(
+                f"قيد غير متوازن ({e['entry_no']}) في {label}: مدين {e['total_debit']:,.2f} "
+                f"≠ دائن {e['total_credit']:,.2f} — الفرق {e['difference']:,.2f}. "
+                f"صحّح القيد ثم أعد إصدار القائمة.")
     return {
         "title": "قائمة الدخل المقارنة",
+        "data_warnings": warnings,
         "periods": {
             "current": {"from": per["current"]["from"].isoformat(),
                         "to": per["current"]["to"].isoformat()},

@@ -248,8 +248,8 @@ def payroll_sheet_print(request: Request,
                         print_auto: int = 0,
                         db: Session = Depends(get_db)):
     rep = services.payroll_sheet_report(db, period)
-    return templates.TemplateResponse("reports/payroll_sheet.html", {
-        "request": request,
+    # توقيع Starlette الحديث: TemplateResponse(request, name, context)
+    return templates.TemplateResponse(request, "reports/payroll_sheet.html", {
         "title": f"كشف رواتب — {period}",
         "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "print_auto": bool(print_auto),

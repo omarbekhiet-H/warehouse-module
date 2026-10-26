@@ -9,6 +9,12 @@
   </div>
 {% endblock %}
 {% block content %}
+{% if data_warnings %}
+  <div class="alert alert-danger" role="alert" style="direction:rtl;text-align:right;background:#fdecea;border:1px solid #d9534f;color:#8b1a12;padding:10px 14px;border-radius:6px;margin-bottom:12px">
+    <strong>⚠️ تحذير سلامة البيانات:</strong> الأرقام أدناه لا تنتج معادلة القيد المزدوج بسبب قيود غير متوازنة:
+    <ul class="mb-0">{% for w in data_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
 <table class="report">
   <thead>
     <tr>

@@ -129,3 +129,19 @@ def comparative_cash_flow(
 ):
     return ApiResponse.ok(services.cash_flow_comparative(
         db, date_from, date_to, comparison_type, custom_from, custom_to))
+
+
+# ---------- فحوص سلامة البيانات (Data Integrity Checks) ----------
+@router.get("/reports/integrity/unbalanced-entries", response_model=ApiResponse,
+            summary="قيد يومية غير متوازن — فحص سلامة قبل اعتماد القوائم المالية")
+def get_unbalanced_entries(
+    date_from: dt.date | None = Query(None, description="بداية الفترة (اختياري)"),
+    date_to: dt.date | None = Query(None, description="نهاية الفترة (اختياري)"),
+    db: Session = Depends(get_db),
+):
+    """يرجع كل قيد مجموع مدينه ≠ مجموع دائنه داخل الفترة المحددة.
+
+    أي نتيجة هنا تعني أن القوائم المالية الصادرة عن نفس الفترة غير موثوقة:
+    صافي الدخل لن يساوي (الإيرادات − المصروفات) المعروضة على الشاشة، ويجب
+    تصحيح القيود (أو حذفها) قبل الاعتماد أو الطباعة."""
+    return ApiResponse.ok(services.unbalanced_entries(db, date_from, date_to))

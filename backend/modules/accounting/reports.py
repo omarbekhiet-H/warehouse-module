@@ -87,9 +87,9 @@ def print_income_statement(
         rev_rows, exp_rows = data["revenue"], data["expenses"]
         totals = data["totals"]
 
-    return templates.TemplateResponse("reports/income_statement.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "reports/income_statement.html", {
         "title": data.get("title", "قائمة الدخل"),
+        "data_warnings": data.get("data_warnings", []),
         "periods": periods,
         "comparative": comparative,
         "revenue": rev_rows,
@@ -140,8 +140,7 @@ def print_balance_sheet(
         }
         periods = {"current_as_of": as_of.isoformat(), "prior_as_of": None}
 
-    return templates.TemplateResponse("reports/balance_sheet.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "reports/balance_sheet.html", {
         "title": data.get("title", "قائمة المركز المالي"),
         "periods": periods,
         "comparative": comparative,
@@ -168,8 +167,7 @@ def print_cash_flow(
                                           comparison_type, custom_from, custom_to)
     cur = data["detail"]["current"]
     pri = data["detail"]["prior"]
-    return templates.TemplateResponse("reports/cash_flow.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "reports/cash_flow.html", {
         "title": data["title"],
         "periods": {"current": cur["period"], "prior": pri["period"]},
         "lines": data["lines"],
